@@ -20,7 +20,7 @@
 <body>
 
 <header>
-  <div class="brand" id="brand" role="button" tabindex="0" title="mememe — start page">
+  <div class="brand" id="brand" role="button" tabindex="0" title="mememe — back to top">
     <img src="/android-chrome-192x192.png" alt="" class="brand-logo" width="40" height="40">
     <div class="brand-text">
       <h1>mememe</h1>
@@ -41,37 +41,53 @@
 </header>
 <p class="sub">Make memes, image grids and comic strips — entirely in your browser. Nothing is uploaded.</p>
 
-<!-- ---------- Sources ---------- -->
-<div class="drop" id="drop">
-  <p><strong>Tap to add images</strong><br>or drag &amp; drop / paste them here</p>
-  <input type="file" id="fileInput" accept="image/*" multiple>
-</div>
-<div class="btn-row-inline">
-  <button type="button" class="btn secondary" id="templatesBtn">🖼 Templates…</button>
-  <button type="button" class="btn secondary" id="colorPanelBtn">▭ Blank panel</button>
-</div>
-<p class="processing-hint" id="processingHint" hidden></p>
+<main class="workspace" id="workspace">
 
-<!-- ---------- Panel strip ---------- -->
-<div class="strip-wrap" id="stripWrap" hidden>
-  <div class="strip" id="strip"></div>
-</div>
+<!-- ================= Sources ================= -->
+<section id="srcBlock">
+  <div class="drop" id="drop" title="Add one or more images. You can also drag them onto the canvas or paste them (Ctrl+V).">
+    <p><strong>Tap to add images</strong><br>or drag &amp; drop / paste them here</p>
+    <input type="file" id="fileInput" accept="image/*" multiple>
+  </div>
+  <div class="btn-row-inline">
+    <button type="button" class="btn secondary" id="templatesBtn" title="Pick a meme template or a free image from a third-party website">🖼 Templates…</button>
+    <button type="button" class="btn secondary" id="colorPanelBtn" title="Add an empty colored panel, e.g. for text next to an image">▭ Blank panel</button>
+  </div>
+  <p class="processing-hint" id="processingHint" hidden></p>
+  <div class="strip-wrap" id="stripWrap" hidden>
+    <div class="strip" id="strip" title="Tap to select · drag (or long-press and drag on touch) to reorder"></div>
+    <p class="muted small-txt strip-hint">Drag to reorder · long-press first on touch screens</p>
+  </div>
+</section>
 
-<!-- ---------- Stage ---------- -->
-<div class="toolbar" id="toolbar">
-  <button type="button" class="tool" id="undoBtn" title="Undo (Ctrl+Z)" disabled>↶</button>
-  <button type="button" class="tool" id="redoBtn" title="Redo (Ctrl+Y)" disabled>↷</button>
-  <span class="tool-sep"></span>
-  <button type="button" class="tool wide" id="addTextBtn" title="Add text">+ Text</button>
-  <button type="button" class="tool wide" id="addBubbleBtn" title="Add speech bubble">+ Bubble</button>
-  <button type="button" class="tool wide" id="topBottomBtn" title="Add classic top &amp; bottom text">Top/Bottom</button>
-</div>
-<div class="stage" id="stage">
-  <canvas id="canvas" width="1080" height="1080"></canvas>
-</div>
-<p class="stage-hint" id="stageHint">Tap a text or bubble to edit it, drag to move. Tap an image to adjust it — drag inside a selected image to move its crop.</p>
+<!-- ================= Stage ================= -->
+<section id="stageBlock">
+  <div class="toolbar" id="toolbar">
+    <button type="button" class="tool" id="undoBtn" title="Undo (Ctrl+Z)" disabled>↶</button>
+    <button type="button" class="tool" id="redoBtn" title="Redo (Ctrl+Y)" disabled>↷</button>
+    <span class="tool-sep"></span>
+    <button type="button" class="tool wide" id="addTextBtn" title="Add a text box to the selected image (or the whole canvas)">+ Text</button>
+    <button type="button" class="tool wide" id="addBubbleBtn" title="Add a speech bubble to the selected image (or the whole canvas)">+ Bubble</button>
+    <button type="button" class="tool wide" id="topBottomBtn" title="Add the classic meme text pair at the top and bottom">Top/Bottom</button>
+    <span class="tool-sep"></span>
+    <button type="button" class="tool" id="detailBtn" title="Detail view: zoom into the selected image (or double-tap an image)">🔍</button>
+    <button type="button" class="tool" id="pinBtn" title="Pin the canvas to the top while scrolling the settings">📌</button>
+  </div>
+  <div class="detail-bar" id="detailBar" hidden>
+    <button type="button" class="icon small" id="detailPrev" title="Previous image">◀</button>
+    <span id="detailLabel">Image 1 of 1</span>
+    <button type="button" class="icon small" id="detailNext" title="Next image">▶</button>
+    <button type="button" class="btn small secondary" id="detailExit" title="Back to the whole composition (Esc)">✕ Overview</button>
+  </div>
+  <div class="stage" id="stage">
+    <canvas id="canvas" width="1080" height="1080"></canvas>
+  </div>
+  <p class="stage-hint" id="stageHint">Tap a text or bubble to edit it, drag to move. Tap an image to select it — drag inside a selected image to move its crop, double-tap it for the detail view.</p>
+</section>
 
-<!-- ---------- Properties (context) ---------- -->
+<!-- ================= Controls ================= -->
+<section id="ctrlBlock">
+
 <div class="card" id="propsCard">
   <div id="propsEmpty" class="muted">Nothing selected. Add images, text or bubbles — then tap something on the canvas to edit it.</div>
 
@@ -83,15 +99,15 @@
         <button type="button" class="icon small" id="elBackBtn" title="Send backward">⤓</button>
         <button type="button" class="icon small" id="elFrontBtn" title="Bring forward">⤒</button>
         <button type="button" class="icon small" id="elDupBtn" title="Duplicate">⧉</button>
-        <button type="button" class="icon small danger" id="elDelBtn" title="Delete">🗑</button>
+        <button type="button" class="icon small danger" id="elDelBtn" title="Delete (Del)">🗑</button>
       </div>
     </div>
-    <textarea id="elText" rows="2" placeholder="Type your text…"></textarea>
+    <textarea id="elText" rows="2" placeholder="Type your text…" title="The text. Line breaks are kept."></textarea>
 
     <div id="bubbleOnly" hidden>
       <div class="row">
         <label class="lbl">Shape</label>
-        <select id="bShape">
+        <select id="bShape" title="Bubble shape">
           <option value="oval">Speech (oval)</option>
           <option value="rounded">Speech (rounded box)</option>
           <option value="thought">Thought (cloud)</option>
@@ -102,45 +118,41 @@
       </div>
       <div class="row">
         <label class="lbl">Fill</label>
-        <input type="color" id="bFill">
-        <input type="range" id="bFillOpacity" min="0" max="100" title="Fill opacity">
+        <input type="color" id="bFill" title="Fill color">
+        <input type="range" id="bFillOpacity" min="0" max="100" title="Fill opacity — 0 % is fully see-through">
         <span class="val" id="bFillOpacityVal"></span>
       </div>
       <div class="row">
         <label class="lbl">Border</label>
-        <input type="color" id="bBorder">
-        <input type="range" id="bBorderWidth" min="0" max="20" title="Border width">
+        <input type="color" id="bBorder" title="Border color">
+        <input type="range" id="bBorderWidth" min="0" max="20" title="Border width (0 = no border)">
         <span class="val" id="bBorderWidthVal"></span>
       </div>
       <div class="row">
-        <label class="lbl" for="bTail">Tail</label>
-        <input type="checkbox" id="bTail">
-        <span class="muted small-txt">Drag the round handle on the canvas to point it.</span>
-      </div>
-      <div class="row">
-        <label class="lbl" for="bAutoH">Auto height</label>
-        <input type="checkbox" id="bAutoH">
+        <label class="lbl">Tail</label>
+        <input type="checkbox" id="bTail" title="Show the pointer of the bubble">
+        <span class="muted small-txt">Drag the orange handle to point it.</span>
       </div>
     </div>
 
     <div class="row">
       <label class="lbl">Font</label>
-      <select id="elFont"></select>
-      <button type="button" class="icon small" id="loadFontBtn" title="Load your own font file (.ttf, .otf, .woff, .woff2)">＋</button>
+      <select id="elFont" title="Font"></select>
+      <button type="button" class="icon small" id="loadFontBtn" title="Load your own font file (.ttf, .otf, .woff, .woff2) for this session">＋</button>
       <input type="file" id="fontInput" accept=".ttf,.otf,.woff,.woff2,font/*">
     </div>
     <div class="row">
       <label class="lbl">Size</label>
-      <input type="range" id="elSize" min="10" max="200">
+      <input type="range" id="elSize" min="10" max="200" title="Font size (relative to the image it belongs to)">
       <span class="val" id="elSizeVal"></span>
     </div>
     <div class="row">
       <label class="lbl">Color</label>
-      <input type="color" id="elColor">
+      <input type="color" id="elColor" title="Text color">
       <div class="seg-mini" id="elAlign">
-        <button type="button" data-v="left" title="Align left">⯇</button>
-        <button type="button" data-v="center" title="Center">≡</button>
-        <button type="button" data-v="right" title="Align right">⯈</button>
+        <button type="button" data-v="left" title="Align text left">⯇</button>
+        <button type="button" data-v="center" title="Center text">≡</button>
+        <button type="button" data-v="right" title="Align text right">⯈</button>
       </div>
       <div class="seg-mini" id="elStyleBtns">
         <button type="button" data-k="bold" title="Bold"><b>B</b></button>
@@ -150,24 +162,61 @@
     </div>
     <div class="row">
       <label class="lbl">Outline</label>
-      <input type="color" id="elStroke">
-      <input type="range" id="elStrokeW" min="0" max="30" title="Outline width">
+      <input type="color" id="elStroke" title="Outline color around the letters">
+      <input type="range" id="elStrokeW" min="0" max="30" title="Outline width (0 = none)">
       <span class="val" id="elStrokeWVal"></span>
     </div>
-    <div class="row" id="textBgRow">
-      <label class="lbl" for="elBgOn">Background</label>
-      <input type="checkbox" id="elBgOn">
-      <input type="color" id="elBg">
-      <input type="range" id="elBgOpacity" min="0" max="100" title="Background opacity">
-      <span class="val" id="elBgOpacityVal"></span>
-    </div>
-    <div class="row">
-      <label class="lbl" for="elShadow">Shadow</label>
-      <input type="checkbox" id="elShadow">
-      <label class="lbl short" id="rotLbl">Rotate</label>
-      <input type="range" id="elRot" min="-45" max="45">
-      <span class="val" id="elRotVal"></span>
-    </div>
+
+    <details class="adv" id="elAdv">
+      <summary>More options</summary>
+      <div class="row">
+        <label class="lbl">Position</label>
+        <div class="anchor-grid" id="elAnchor" title="Snap the element to a corner, edge or the center of its image (or the canvas)">
+          <button type="button" data-a="tl" title="Top left">◤</button><button type="button" data-a="tc" title="Top center">▲</button><button type="button" data-a="tr" title="Top right">◥</button>
+          <button type="button" data-a="ml" title="Middle left">◀</button><button type="button" data-a="mc" title="Center">●</button><button type="button" data-a="mr" title="Middle right">▶</button>
+          <button type="button" data-a="bl" title="Bottom left">◣</button><button type="button" data-a="bc" title="Bottom center">▼</button><button type="button" data-a="br" title="Bottom right">◢</button>
+        </div>
+        <div class="col-mini">
+          <span class="muted small-txt">Distance to edge</span>
+          <input type="range" id="elMargin" min="0" max="120" title="Distance to the edge used by the position buttons">
+        </div>
+      </div>
+      <div class="row">
+        <label class="lbl">Attach to</label>
+        <select id="elPin" title="Auto: belongs to the image it sits on (moves with it when reordering). Canvas: stays put on the whole composition.">
+          <option value="auto">Image under it (auto)</option>
+          <option value="canvas">Whole canvas</option>
+        </select>
+      </div>
+      <div class="row">
+        <label class="lbl">Clip</label>
+        <input type="checkbox" id="elClip" title="Cut off everything that sticks out of its image">
+        <span class="muted small-txt">Cut off at the image edge</span>
+      </div>
+      <div class="row">
+        <label class="lbl">Auto-fit</label>
+        <input type="checkbox" id="elFit" title="Shrink the text so it fits into its box. For texts the box gets a fixed height (drag the corner handle).">
+        <span class="muted small-txt">Shrink text to fit its box</span>
+      </div>
+      <div class="row" id="autoHRow">
+        <label class="lbl">Auto height</label>
+        <input type="checkbox" id="bAutoH" title="Bubble grows with its text. Off: free size via the corner handle.">
+      </div>
+      <div class="row" id="textBgRow">
+        <label class="lbl">Background</label>
+        <input type="checkbox" id="elBgOn" title="Box behind the text">
+        <input type="color" id="elBg" title="Box color">
+        <input type="range" id="elBgOpacity" min="0" max="100" title="Box opacity">
+        <span class="val" id="elBgOpacityVal"></span>
+      </div>
+      <div class="row">
+        <label class="lbl">Shadow</label>
+        <input type="checkbox" id="elShadow" title="Soft drop shadow">
+        <label class="lbl short" id="rotLbl">Rotate</label>
+        <input type="range" id="elRot" min="-45" max="45" title="Rotation in degrees">
+        <span class="val" id="elRotVal"></span>
+      </div>
+    </details>
   </div>
 
   <!-- Panel properties -->
@@ -177,24 +226,24 @@
       <div class="head-btns">
         <button type="button" class="icon small" id="pLeftBtn" title="Move earlier">◀</button>
         <button type="button" class="icon small" id="pRightBtn" title="Move later">▶</button>
-        <button type="button" class="icon small" id="pReplaceBtn" title="Replace image">⇄</button>
-        <button type="button" class="icon small danger" id="pDelBtn" title="Remove panel">🗑</button>
+        <button type="button" class="icon small" id="pReplaceBtn" title="Replace the image (texts stay)">⇄</button>
+        <button type="button" class="icon small danger" id="pDelBtn" title="Remove this panel">🗑</button>
       </div>
     </div>
     <input type="file" id="replaceInput" accept="image/*">
     <div class="row">
       <label class="lbl">Caption</label>
-      <textarea id="pCaption" rows="1" placeholder="Caption / subtitle (optional)"></textarea>
+      <textarea id="pCaption" rows="1" placeholder="Caption / subtitle (optional)" title="Caption or subtitle — its look is set under Layout → Captions"></textarea>
     </div>
     <div class="row" id="pColorRow">
       <label class="lbl">Color</label>
-      <input type="color" id="pColor">
-      <span class="muted small-txt">Background of this panel</span>
+      <input type="color" id="pColor" title="Panel color">
+      <input type="text" id="pColorHex" maxlength="7" placeholder="#ffffff" spellcheck="false" class="hex" title="Color code, e.g. #ff8800">
     </div>
     <div id="pImageRows">
       <div class="row">
         <label class="lbl">Fit</label>
-        <select id="pFit">
+        <select id="pFit" title="How the image fills its cell">
           <option value="">Layout default</option>
           <option value="cover">Fill (crop)</option>
           <option value="contain">Fit (letterbox)</option>
@@ -202,62 +251,83 @@
         </select>
         <button type="button" class="icon small" id="pFlipBtn" title="Mirror horizontally">⇋</button>
       </div>
-      <div class="row">
-        <label class="lbl">Zoom</label>
-        <input type="range" id="pZoom" min="100" max="400">
-        <span class="val" id="pZoomVal"></span>
+    </div>
+    <details class="adv" id="pAdv">
+      <summary>More options</summary>
+      <div id="pImageAdv">
+        <div class="row">
+          <label class="lbl">Zoom</label>
+          <input type="range" id="pZoom" min="100" max="400" title="Zoom into the image">
+          <span class="val" id="pZoomVal"></span>
+        </div>
+        <div class="row">
+          <label class="lbl">Crop X</label>
+          <input type="range" id="pOffX" min="-100" max="100" title="Horizontal crop position (you can also drag inside the selected image)">
+          <label class="lbl short">Y</label>
+          <input type="range" id="pOffY" min="-100" max="100" title="Vertical crop position">
+        </div>
+      </div>
+      <div class="row" id="pSpanRow">
+        <label class="lbl">Width</label>
+        <select id="pSpan" title="How many columns this panel spans (same-size cells only)"></select>
       </div>
       <div class="row">
-        <label class="lbl">Crop X</label>
-        <input type="range" id="pOffX" min="-100" max="100">
-        <label class="lbl short">Y</label>
-        <input type="range" id="pOffY" min="-100" max="100">
+        <label class="lbl">Number</label>
+        <input type="text" id="pNumText" placeholder="auto" title="Own label for this panel's number badge (empty = automatic)">
+        <label class="inline-chk" title="Hide the number badge of this panel"><input type="checkbox" id="pNumHide"> hide</label>
       </div>
-    </div>
-    <div class="row" id="pSpanRow">
-      <label class="lbl">Width</label>
-      <select id="pSpan"></select>
-      <span class="muted small-txt">columns (uniform cells only)</span>
-    </div>
+      <div class="row">
+        <label class="lbl">Badge colors</label>
+        <input type="checkbox" id="pNumOwn" title="Use own badge colors for this panel">
+        <input type="color" id="pNumColor" title="Number color">
+        <input type="color" id="pNumBg" title="Badge color">
+      </div>
+    </details>
   </div>
 </div>
 
 <!-- ---------- Layout ---------- -->
-<details class="card" id="layoutCard" open>
-  <summary class="label-main">Layout</summary>
+<details class="card" id="layoutCard">
+  <summary class="label-main" title="Columns, cell sizes, resolution and captions">Layout</summary>
   <div class="presets" id="presets">
-    <button type="button" data-preset="classic">Classic meme</button>
-    <button type="button" data-preset="captionTop">Caption on top</button>
-    <button type="button" data-preset="twoCol">Two columns</button>
-    <button type="button" data-preset="grid">Grid</button>
-    <button type="button" data-preset="mosaic">Mosaic</button>
-    <button type="button" data-preset="comic">Comic page</button>
-    <button type="button" data-preset="story">Storyline</button>
+    <button type="button" data-preset="classic" title="One image, big outlined top & bottom text">Classic meme</button>
+    <button type="button" data-preset="captionTop" title="White caption bar above the image">Caption on top</button>
+    <button type="button" data-preset="twoCol" title="Two columns — combine with blank panels for text next to images">Two columns</button>
+    <button type="button" data-preset="grid" title="Same-size grid with spacing">Grid</button>
+    <button type="button" data-preset="mosaic" title="Images keep their ratios, rows fill the width">Mosaic</button>
+    <button type="button" data-preset="comic" title="Comic page with frames and narration boxes">Comic page</button>
+    <button type="button" data-preset="story" title="Images below each other with subtitles">Storyline</button>
   </div>
 
   <div class="row">
     <label class="lbl">Columns</label>
-    <select id="lCols">
+    <select id="lCols" title="Images per row (Auto: depends on the number of images)">
       <option value="auto">Auto</option>
       <option value="1">1</option><option value="2">2</option><option value="3">3</option>
       <option value="4">4</option><option value="5">5</option><option value="6">6</option>
     </select>
-    <label class="lbl short">Width</label>
-    <select id="lWidth">
-      <option value="720">720 px</option>
-      <option value="1080">1080 px</option>
-      <option value="1440">1440 px</option>
-      <option value="2048">2048 px</option>
-      <option value="orig">Like 1st image</option>
-    </select>
   </div>
   <div class="row">
+    <label class="lbl">Resolution</label>
+    <select id="lWidth" title="Width of the finished image">
+      <option value="720">720 px wide</option>
+      <option value="1080">1080 px wide</option>
+      <option value="1440">1440 px wide</option>
+      <option value="2048">2048 px wide</option>
+      <option value="3072">3072 px wide</option>
+      <option value="4096">4096 px wide</option>
+      <option value="orig">Like the 1st image</option>
+      <option value="detail">All images at original size</option>
+    </select>
+  </div>
+  <p class="muted small-txt res-hint" id="resHint"></p>
+  <div class="row">
     <label class="lbl">Cells</label>
-    <select id="lMode">
+    <select id="lMode" title="Same size: every image gets the same cell. Mosaic: images keep their ratios.">
       <option value="uniform">Same size</option>
       <option value="justified">Original ratios (mosaic)</option>
     </select>
-    <select id="lAspect">
+    <select id="lAspect" title="Shape of the cells">
       <option value="first">Like 1st image</option>
       <option value="1">1:1</option>
       <option value="1.3333">4:3</option>
@@ -268,40 +338,19 @@
   </div>
   <div class="row">
     <label class="lbl">Fit</label>
-    <select id="lFit">
+    <select id="lFit" title="How images fill their cells">
       <option value="cover">Fill (crop)</option>
       <option value="contain">Fit (letterbox)</option>
       <option value="stretch">Stretch</option>
     </select>
     <label class="lbl short">Bg</label>
-    <input type="color" id="lBg">
-  </div>
-  <div class="row">
-    <label class="lbl">Gap</label>
-    <input type="range" id="lGap" min="0" max="60">
-    <span class="val" id="lGapVal"></span>
-  </div>
-  <div class="row">
-    <label class="lbl">Margin</label>
-    <input type="range" id="lPad" min="0" max="80">
-    <span class="val" id="lPadVal"></span>
-  </div>
-  <div class="row">
-    <label class="lbl">Frame</label>
-    <input type="color" id="lBorderColor">
-    <input type="range" id="lBorder" min="0" max="20" title="Panel frame width">
-    <span class="val" id="lBorderVal"></span>
-  </div>
-  <div class="row">
-    <label class="lbl">Corners</label>
-    <input type="range" id="lRadius" min="0" max="60">
-    <span class="val" id="lRadiusVal"></span>
+    <input type="color" id="lBg" title="Background color (visible behind letterboxed images and empty areas)">
   </div>
 
   <div class="subhead">Captions &amp; subtitles</div>
   <div class="row">
     <label class="lbl">Position</label>
-    <select id="cPos">
+    <select id="cPos" title="Where the per-image caption goes">
       <option value="overlayBottom">On image, bottom (subtitle)</option>
       <option value="overlayTop">On image, top</option>
       <option value="below">Bar below image</option>
@@ -310,84 +359,185 @@
   </div>
   <div class="row">
     <label class="lbl">Font</label>
-    <select id="cFont"></select>
-    <input type="color" id="cColor" title="Text color">
+    <select id="cFont" title="Caption font"></select>
+    <input type="color" id="cColor" title="Caption text color">
   </div>
   <div class="row">
     <label class="lbl">Size</label>
-    <input type="range" id="cSize" min="12" max="120">
+    <input type="range" id="cSize" min="12" max="120" title="Caption size (relative to one column)">
     <span class="val" id="cSizeVal"></span>
   </div>
-  <div class="row">
-    <label class="lbl">Outline</label>
-    <input type="color" id="cStroke">
-    <input type="range" id="cStrokeW" min="0" max="20">
-    <span class="val" id="cStrokeWVal"></span>
-  </div>
-  <div class="row">
-    <label class="lbl">Box</label>
-    <input type="color" id="cBg">
-    <input type="range" id="cBgOpacity" min="0" max="100" title="Box opacity">
-    <span class="val" id="cBgOpacityVal"></span>
-  </div>
-  <div class="row">
-    <label class="lbl">Align</label>
-    <div class="seg-mini" id="cAlign">
-      <button type="button" data-v="left">⯇</button>
-      <button type="button" data-v="center">≡</button>
-      <button type="button" data-v="right">⯈</button>
+  <details class="adv">
+    <summary>More caption options</summary>
+    <div class="row">
+      <label class="lbl">Outline</label>
+      <input type="color" id="cStroke" title="Outline color">
+      <input type="range" id="cStrokeW" min="0" max="20" title="Outline width">
+      <span class="val" id="cStrokeWVal"></span>
     </div>
-    <div class="seg-mini" id="cStyleBtns">
-      <button type="button" data-k="bold"><b>B</b></button>
-      <button type="button" data-k="italic"><i>I</i></button>
-      <button type="button" data-k="upper">AA</button>
+    <div class="row">
+      <label class="lbl">Box</label>
+      <input type="color" id="cBg" title="Box / bar color">
+      <input type="range" id="cBgOpacity" min="0" max="100" title="Box / bar opacity">
+      <span class="val" id="cBgOpacityVal"></span>
     </div>
+    <div class="row">
+      <label class="lbl">Align</label>
+      <div class="seg-mini" id="cAlign">
+        <button type="button" data-v="left" title="Left">⯇</button>
+        <button type="button" data-v="center" title="Center">≡</button>
+        <button type="button" data-v="right" title="Right">⯈</button>
+      </div>
+      <div class="seg-mini" id="cStyleBtns">
+        <button type="button" data-k="bold" title="Bold"><b>B</b></button>
+        <button type="button" data-k="italic" title="Italic"><i>I</i></button>
+        <button type="button" data-k="upper" title="UPPERCASE">AA</button>
+      </div>
+    </div>
+  </details>
+</details>
+
+<!-- ---------- Frame & spacing ---------- -->
+<details class="card" id="frameCard">
+  <summary class="label-main" title="Lines between the images and a frame around everything">Frame &amp; spacing</summary>
+  <div class="row">
+    <label class="lbl">Between</label>
+    <input type="color" id="lGapColor" title="Color of the lines between images">
+    <input type="range" id="lGap" min="0" max="60" title="Width of the lines between images">
+    <span class="val" id="lGapVal"></span>
   </div>
+  <div class="row">
+    <label class="lbl">Outer frame</label>
+    <input type="color" id="lPadColor" title="Color of the frame around everything">
+    <input type="range" id="lPad" min="0" max="80" title="Width of the frame around everything">
+    <span class="val" id="lPadVal"></span>
+  </div>
+  <details class="adv">
+    <summary>More frame options</summary>
+    <div class="row">
+      <label class="lbl">Image edge</label>
+      <input type="color" id="lBorderColor" title="Color of the edge drawn on every image">
+      <input type="range" id="lBorder" min="0" max="20" title="Width of the edge drawn on every image (comic look)">
+      <span class="val" id="lBorderVal"></span>
+    </div>
+    <div class="row">
+      <label class="lbl">Corners</label>
+      <input type="range" id="lRadius" min="0" max="60" title="Rounded corners of the images">
+      <span class="val" id="lRadiusVal"></span>
+    </div>
+  </details>
+</details>
+
+<!-- ---------- Numbering ---------- -->
+<details class="card" id="numCard">
+  <summary class="label-main" title="Number or letter badges on every image">Numbering</summary>
+  <div class="toggle-row first">
+    <label class="label-main" for="nOn">Number the images</label>
+    <input type="checkbox" id="nOn" title="Show a number badge on every image">
+  </div>
+  <div class="row">
+    <label class="lbl">Style</label>
+    <select id="nFormat" title="Numbers, letters or roman numerals">
+      <option value="1">1, 2, 3</option>
+      <option value="A">A, B, C</option>
+      <option value="a">a, b, c</option>
+      <option value="I">I, II, III</option>
+      <option value="i">i, ii, iii</option>
+    </select>
+    <input type="color" id="nColor" title="Number color">
+    <input type="color" id="nBg" title="Badge color">
+  </div>
+  <div class="row">
+    <label class="lbl">Size</label>
+    <input type="range" id="nSize" min="10" max="150" title="Badge size (relative to one column)">
+    <span class="val" id="nSizeVal"></span>
+  </div>
+  <details class="adv">
+    <summary>More numbering options</summary>
+    <div class="row">
+      <label class="lbl">Shape</label>
+      <select id="nShape" title="Badge shape">
+        <option value="circle">Circle</option>
+        <option value="square">Rounded square</option>
+        <option value="none">Text only</option>
+      </select>
+      <select id="nFont" title="Badge font"></select>
+    </div>
+    <div class="row">
+      <label class="lbl">Border</label>
+      <input type="color" id="nBorder" title="Badge border color">
+      <input type="range" id="nBorderW" min="0" max="12" title="Badge border width">
+      <span class="val" id="nBorderWVal"></span>
+    </div>
+    <div class="row">
+      <label class="lbl">Position</label>
+      <div class="anchor-grid" id="nAnchor" title="Where the badge sits on every image">
+        <button type="button" data-a="tl" title="Top left">◤</button><button type="button" data-a="tc" title="Top center">▲</button><button type="button" data-a="tr" title="Top right">◥</button>
+        <button type="button" data-a="ml" title="Middle left">◀</button><button type="button" data-a="mc" title="Center">●</button><button type="button" data-a="mr" title="Middle right">▶</button>
+        <button type="button" data-a="bl" title="Bottom left">◣</button><button type="button" data-a="bc" title="Bottom center">▼</button><button type="button" data-a="br" title="Bottom right">◢</button>
+      </div>
+      <div class="col-mini">
+        <span class="muted small-txt">Distance to edge</span>
+        <input type="range" id="nMargin" min="0" max="100" title="Distance of the badge to the image edge">
+      </div>
+    </div>
+    <p class="muted small-txt">Single badges: select an image → More options → Number.</p>
+  </details>
 </details>
 
 <!-- ---------- Export ---------- -->
 <div class="card">
   <div class="row">
     <label class="lbl">Format</label>
-    <select id="exFormat">
+    <select id="exFormat" title="File format of the download">
       <option value="png">PNG</option>
       <option value="jpeg">JPG</option>
       <option value="webp">WebP</option>
     </select>
-    <input type="range" id="exQuality" min="40" max="100" title="Quality (JPG/WebP)">
+    <input type="range" id="exQuality" min="40" max="100" title="Quality for JPG / WebP">
     <span class="val" id="exQualityVal"></span>
   </div>
+  <p class="muted small-txt" id="exSize"></p>
   <div class="btn-row">
-    <button type="button" class="btn" id="downloadBtn">Download</button>
-    <button type="button" class="btn secondary" id="shareBtn" hidden>Share…</button>
+    <button type="button" class="btn" id="downloadBtn" title="Save the finished image">Download</button>
+    <button type="button" class="btn secondary" id="shareBtn" title="Share the image with another app" hidden>Share…</button>
   </div>
-  <button type="button" id="clearAllBtn">Start over</button>
+  <button type="button" id="clearAllBtn" title="Remove everything and start a new composition">Start over</button>
 </div>
+
+</section>
+</main>
 
 <footer>mememe · <span id="footerVersion"></span></footer>
 
 <!-- ---------- Templates modal ---------- -->
 <div class="modal-bg" id="tplModal">
   <div class="modal wide">
-    <h2>Meme templates</h2>
+    <h2>Templates &amp; free images</h2>
     <p class="notice">
-      Templates come from a <strong>third-party website</strong>. Only when you press “Load”, your device contacts that site
-      directly (it sees your IP address, like any website). Template images may be copyrighted — fine for personal fun,
-      be careful with commercial use. If a site blocks browser apps, save the image yourself and add it via “Tap to add images”.
+      These come from <strong>third-party websites</strong>. Only when you press “Load” or “Search”, your device contacts that
+      site directly (it sees your IP address, like any website). Meme templates may be copyrighted — fine for personal fun,
+      careful with commercial use. Wikimedia / Openverse images are freely licensed: credit the author when you share.
     </p>
     <div class="row">
       <label class="lbl">Source</label>
-      <select id="tplSource">
-        <option value="imgflip">Imgflip — top 100 popular</option>
-        <option value="memegen">Memegen.link — open-source catalogue</option>
+      <select id="tplSource" title="Where the pictures come from">
+        <option value="imgflip">Imgflip — top 100 popular memes</option>
+        <option value="memegen">Memegen.link — ~200 classic memes</option>
+        <option value="reddit">Reddit r/MemeTemplatesOfficial (experimental)</option>
+        <option value="wikimedia">Wikimedia Commons — old art &amp; photos</option>
+        <option value="openverse">Openverse — openly licensed images</option>
       </select>
+    </div>
+    <p class="muted small-txt" id="tplSourceInfo"></p>
+    <div class="row">
+      <input type="search" id="tplSearch" placeholder="Filter…" title="Type to filter / search">
       <button type="button" class="btn small" id="tplLoadBtn">Load</button>
     </div>
-    <div class="row">
-      <input type="search" id="tplSearch" placeholder="Filter templates…" disabled>
-    </div>
+    <div class="chips" id="tplChips"></div>
     <p class="muted small-txt" id="tplStatus">Nothing loaded yet.</p>
     <div class="tpl-grid" id="tplGrid"></div>
+    <button type="button" class="btn secondary more-btn" id="tplMoreBtn" hidden>Show more</button>
     <details class="sub-details">
       <summary>Load an image from a web address</summary>
       <div class="row">
@@ -413,23 +563,35 @@
       </select>
     </div>
     <div class="row">
-      <label class="lbl wide">Default width</label>
+      <label class="lbl wide">Default resolution</label>
       <select id="setWidth">
-        <option value="720">720 px</option>
-        <option value="1080">1080 px</option>
-        <option value="1440">1440 px</option>
-        <option value="2048">2048 px</option>
-        <option value="orig">Like 1st image</option>
+        <option value="720">720 px wide</option>
+        <option value="1080">1080 px wide</option>
+        <option value="1440">1440 px wide</option>
+        <option value="2048">2048 px wide</option>
+        <option value="3072">3072 px wide</option>
+        <option value="4096">4096 px wide</option>
+        <option value="orig">Like the 1st image</option>
+        <option value="detail">All images at original size</option>
+      </select>
+    </div>
+    <div class="row">
+      <label class="lbl wide">Side-by-side view</label>
+      <select id="setSide" title="Canvas on the left, settings on the right">
+        <option value="auto">Auto (wide landscape screens)</option>
+        <option value="always">Always</option>
+        <option value="never">Never</option>
       </select>
     </div>
     <div class="toggle-row">
-      <label class="label-main" for="setSnap">Snap to center lines while dragging</label>
+      <label class="label-main" for="setSnap">Snap to centers and edges while dragging</label>
       <input type="checkbox" id="setSnap">
     </div>
     <div class="toggle-row">
-      <label class="label-main" for="setDownscale">Downscale big photos on import (max 2560 px, saves memory)</label>
+      <label class="label-main" for="setDownscale">Downscale huge photos on import (max 4096 px, saves memory)</label>
       <input type="checkbox" id="setDownscale">
     </div>
+    <p class="muted small-txt">Tip: click a setting's label in the editor to reset it to its default.</p>
     <button class="close" data-close="settingsModal">Close</button>
   </div>
 </div>
@@ -445,14 +607,14 @@
       </div>
     </div>
     <p>Version <strong id="aboutVersion"></strong></p>
-    <p>Create memes, image grids, mosaics, comic pages and storylines with captions, text and speech bubbles.</p>
+    <p>Create memes, image grids, mosaics, comic pages and storylines with captions, numbers, text and speech bubbles.</p>
     <p class="muted small-txt">
       Privacy: everything happens on your device. Your images never leave it. The only outside requests happen when you
       explicitly load templates or an image from a web address. Settings are kept in your browser's local storage.
     </p>
     <p class="muted small-txt">
       Fonts: Anton, Comic Relief, Archivo Black, Montserrat, Bitter and Anonymous Pro — all under the SIL Open Font License,
-      bundled with the app. Templates belong to their respective owners.
+      bundled with the app. Templates and images belong to their respective owners.
     </p>
     <button class="close" data-close="aboutModal">Close</button>
   </div>

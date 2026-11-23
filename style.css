@@ -258,3 +258,95 @@ footer { text-align: center; color: var(--text-secondary); font-size: 12px; marg
   background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px;
   font-size: 13.5px; max-width: calc(100% - 32px); box-shadow: 0 6px 20px rgba(0,0,0,.3);
 }
+
+/* =====================================================================
+   v0.2.0 additions
+   ===================================================================== */
+
+/* ---------- Workspace: normal flow, side-by-side view, pinned stage ---------- */
+.workspace { display: block; }
+#stageBlock { margin-bottom: 4px; }
+#stageBlock.pinned {
+  position: sticky; top: 0; z-index: 15; background: var(--bg);
+  padding-top: 8px; margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px;
+  box-shadow: 0 8px 12px -10px rgba(0,0,0,.5);
+}
+#stageBlock.pinned #canvas { max-height: 42vh; }
+#stageBlock.pinned .stage-hint { display: none; }
+#pinBtn.active, #detailBtn.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+
+body.side { max-width: 1680px; }
+body.side .workspace {
+  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(330px, 1fr);
+  column-gap: 20px; align-items: start;
+}
+body.side #stageBlock {
+  grid-column: 1; grid-row: 1 / span 2; position: sticky; top: 12px;
+  margin: 0; padding: 0; box-shadow: none; background: none;
+}
+body.side #srcBlock { grid-column: 2; grid-row: 1; }
+body.side #ctrlBlock { grid-column: 2; grid-row: 2; }
+body.side #canvas { max-height: calc(100vh - 150px); }
+body.side #pinBtn { display: none; }
+
+/* ---------- Detail view bar ---------- */
+.detail-bar {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  background: var(--surface); border: 1px solid var(--accent); border-radius: 10px; padding: 6px 8px;
+}
+.detail-bar span { flex: 1; font-size: 13px; font-weight: 600; text-align: center; }
+
+/* ---------- Advanced sections ---------- */
+details.adv { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 8px; }
+details.adv > summary {
+  cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); list-style: none;
+}
+details.adv > summary::-webkit-details-marker { display: none; }
+details.adv > summary::before { content: "▸ "; }
+details.adv[open] > summary::before { content: "▾ "; }
+details.adv[open] > summary { margin-bottom: 6px; }
+
+/* ---------- 3×3 anchor grid ---------- */
+.anchor-grid { display: grid; grid-template-columns: repeat(3, 28px); gap: 3px; flex-shrink: 0; }
+.anchor-grid button {
+  width: 28px; height: 24px; padding: 0; font-size: 10px; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-secondary); border-radius: 5px;
+}
+.anchor-grid button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.anchor-grid button:active { background: var(--accent); color: var(--accent-text); }
+.col-mini { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.col-mini input[type=range] { width: 100%; }
+
+/* ---------- Small bits ---------- */
+input.hex { flex: 0 0 96px; font-family: ui-monospace, monospace; text-transform: lowercase; }
+input.hex.bad { border-color: var(--danger); }
+.inline-chk { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
+.res-hint { margin: 6px 0 0; }
+.res-hint:empty { display: none; }
+.toggle-row.first { margin-top: 0; margin-bottom: 4px; }
+.strip-hint { margin: 2px 0 0; }
+
+/* Labels reset their row to the default on click */
+.lbl[data-reset] { cursor: pointer; }
+.lbl[data-reset]:hover { color: var(--accent); }
+.lbl[data-reset]:hover::after { content: " ↺"; font-size: 11px; }
+
+/* ---------- Strip drag & drop ---------- */
+.strip { position: relative; touch-action: pan-x; }
+.thumb { touch-action: pan-x; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.thumb.dragging { opacity: .85; z-index: 5; box-shadow: 0 6px 16px rgba(0,0,0,.45); border-color: var(--accent); transition: none; }
+.thumb.lift { transform: scale(1.08); }
+.drop-marker {
+  position: absolute; top: 2px; width: 4px; height: 58px; border-radius: 2px; background: var(--accent);
+  pointer-events: none; z-index: 6;
+}
+
+/* ---------- Templates ---------- */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chips:empty { display: none; }
+.chips button {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+}
+.tpl small { font-size: 10px; color: var(--text-secondary); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.more-btn { width: 100%; margin-top: 8px; flex: none; }
