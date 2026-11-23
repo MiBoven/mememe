@@ -12,16 +12,16 @@
 <meta property="og:url" content="https://meme.michels.world/">
 <meta property="og:title" content="mememe — To Me, or not to Me, that's the Meme!">
 <meta property="og:description" content="Make memes, image grids and comic strips right in your browser — nothing is uploaded.">
-<meta property="og:image" content="https://meme.michels.world/android-chrome-512x512.png">
-<meta property="og:image:secure_url" content="https://meme.michels.world/android-chrome-512x512.png">
+<meta property="og:image" content="https://meme.michels.world/og-image.png">
+<meta property="og:image:secure_url" content="https://meme.michels.world/og-image.png">
 <meta property="og:image:type" content="image/png">
-<meta property="og:image:width" content="512">
-<meta property="og:image:height" content="512">
+<meta property="og:image:width" content="600">
+<meta property="og:image:height" content="600">
 <meta property="og:image:alt" content="mememe logo">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="mememe — To Me, or not to Me, that's the Meme!">
 <meta name="twitter:description" content="Make memes, image grids and comic strips right in your browser — nothing is uploaded.">
-<meta name="twitter:image" content="https://meme.michels.world/android-chrome-512x512.png">
+<meta name="twitter:image" content="https://meme.michels.world/og-image.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -51,6 +51,7 @@
       <div class="menu" id="menu" style="display:none;">
         <button type="button" id="menuProjectsBtn">📁 Projects</button>
         <button type="button" id="themeToggle">◐ Dark mode</button>
+        <button type="button" id="helpBtn">❓ Help</button>
         <button type="button" id="settingsBtn">⚙ Settings</button>
         <button type="button" id="aboutBtn">ⓘ About</button>
       </div>
@@ -101,6 +102,7 @@
     <span class="tool-sep"></span>
     <button type="button" class="tool" id="drawBtn" title="Draw freehand (pen, marker, eraser). Two fingers / Ctrl+wheel to zoom.">✏️</button>
     <button type="button" class="tool" id="detailBtn" title="Detail view: zoom into the selected image (or double-tap an image)">🔍</button>
+    <button type="button" class="tool" id="snapBtn" title="Magnet: snap elements to centers and edges while dragging (on/off)">🧲</button>
     <button type="button" class="tool" id="pinBtn" title="Pin the canvas to the top while scrolling the settings">📌</button>
   </div>
   <div class="detail-bar" id="detailBar" hidden>
@@ -280,6 +282,7 @@
         <label class="lbl">Picture</label>
         <button type="button" class="btn small secondary" id="picFlipBtn" title="Mirror horizontally">⇋ Mirror</button>
         <button type="button" class="btn small secondary" id="picReplaceBtn" title="Use another picture file">⇄ Replace</button>
+        <button type="button" class="btn small secondary" id="picSaveBtn" title="Keep this picture in “My stickers” for all projects">★ Save</button>
         <input type="file" id="picReplaceInput" accept="image/*,.svg">
       </div>
       <div class="row" id="drawOnly">
@@ -426,6 +429,16 @@
     </details>
   </div>
 </div>
+
+<!-- ---------- Elements list ---------- -->
+<details class="card" id="elementsCard" hidden>
+  <summary class="label-main" title="All texts, bubbles, stickers, shapes and drawings — topmost first">Elements <span class="muted" id="elCount"></span></summary>
+  <div class="segment" id="elScope">
+    <button type="button" class="active" data-v="image" title="Only the elements of the selected image">Selected image</button>
+    <button type="button" data-v="all" title="All elements of the whole composition">All</button>
+  </div>
+  <div class="el-list" id="elList"></div>
+</details>
 
 <!-- ---------- Filters (image panels & pictures) ---------- -->
 <details class="card" id="filterCard" hidden>
@@ -698,7 +711,7 @@
   <p class="muted small-txt save-status" id="saveStatus"></p>
   <div class="btn-row">
     <button type="button" class="btn" id="downloadBtn" title="Save the finished image">Download</button>
-    <button type="button" class="btn secondary" id="shareBtn" title="Share the image with another app" hidden>Share…</button>
+    <button type="button" class="btn secondary" id="shareBtn" title="Share the image with another app (phones) — or copy it to the clipboard to paste it into a chat (desktop)">↗ Share</button>
   </div>
   <button type="button" id="clearAllBtn" title="Start a new, empty project — the current one stays saved under Projects">＋ New project</button>
 </div>
@@ -755,7 +768,7 @@
     <div class="segment" id="stickerTabs">
       <button type="button" class="active" data-tab="emoji">😀 Emoji</button>
       <button type="button" data-tab="stickers">✨ Stickers</button>
-      <button type="button" data-tab="picture">🖼 Your picture</button>
+      <button type="button" data-tab="picture">★ My stickers</button>
     </div>
     <div id="tabEmoji" class="sticker-tab">
       <div class="emoji-grid" id="emojiGrid"></div>
@@ -764,11 +777,49 @@
       <div class="sticker-grid" id="stickerGrid"></div>
     </div>
     <div id="tabPicture" class="sticker-tab" hidden>
-      <p class="muted">Put any picture on top of your images — icons, logos, cut-outs (PNG / WebP with transparency), SVG, JPG, GIF (first frame). Size, rotation and opacity can be changed afterwards.</p>
-      <button type="button" class="btn" id="pictureFileBtn">Choose picture…</button>
-      <input type="file" id="pictureInput" accept="image/*,.svg">
+      <p class="muted small-txt">Your own stickers — icons, logos, cut-outs (PNG / WebP with transparency), SVG, JPG, GIF (first frame). They are kept in this browser for all projects until you remove them.</p>
+      <button type="button" class="btn" id="pictureFileBtn">＋ Add picture…</button>
+      <input type="file" id="pictureInput" accept="image/*,.svg" multiple>
+      <div class="sticker-grid my-stickers" id="myStickerGrid"></div>
     </div>
     <button class="close" data-close="stickerModal">Close</button>
+  </div>
+</div>
+
+<!-- ---------- Help modal ---------- -->
+<div class="modal-bg" id="helpModal">
+  <div class="modal wide help">
+    <h2>❓ Help — tips &amp; gestures</h2>
+    <h3>Basics</h3>
+    <ul>
+      <li>Add images by tapping the drop zone, dragging files onto the app or pasting (Ctrl+V). Templates and free images: <b>🖼 Templates…</b></li>
+      <li>Tap something on the canvas to select it — its settings appear below (or on the right). Tap outside to deselect.</li>
+      <li>Drag elements to move them; the square corner handle resizes, the orange dot points a bubble's tail.</li>
+      <li>Texts, bubbles, stickers, shapes and drawings belong to the image they sit on and move along when you reorder images (drag the thumbnails, long-press first on touch screens).</li>
+    </ul>
+    <h3>Seeing details</h3>
+    <ul>
+      <li><b>Double-tap an image</b> (or 🔍) for the detail view; ◀ ▶ step through the images.</li>
+      <li><b>Zoom:</b> two fingers, Ctrl + mouse wheel or the + / − buttons on the canvas. <b>Move around:</b> two fingers, mouse wheel, Space + drag.</li>
+      <li>📌 keeps the canvas at the top while you scroll the settings. In fullscreen on wide screens the canvas sits on the left.</li>
+    </ul>
+    <h3>Creating</h3>
+    <ul>
+      <li><b>Top/Bottom</b> adds the classic meme texts. <b>+ Sticker</b> has emoji, ready-made stickers and your own saved pictures (★ My stickers).</li>
+      <li><b>✏️</b> draws freehand (pen, marker, eraser). <b>+ Shape</b> adds rectangles, ellipses, lines and arrows.</li>
+      <li>Layout presets (Classic meme, Grid, Comic page, Storyline, …) are a quick start — everything can be fine-tuned afterwards.</li>
+      <li>🧲 switches snapping on/off. Click a setting's name to reset it to its default.</li>
+    </ul>
+    <h3>Saving</h3>
+    <ul>
+      <li>Your work is saved automatically in this browser. <b>📁 Projects</b> lists, duplicates, exports and imports projects (<code>.mememe</code> files).</li>
+      <li><b>Download</b> saves the finished image; <b>↗ Share</b> sends it to another app or copies it to the clipboard.</li>
+    </ul>
+    <h3>Keyboard</h3>
+    <ul>
+      <li>Ctrl+Z / Ctrl+Y undo &amp; redo · Del removes the selection · arrow keys nudge (Shift = 10 px) · Esc leaves drawing, zoom, detail view or the selection</li>
+    </ul>
+    <button class="close" data-close="helpModal">Close</button>
   </div>
 </div>
 

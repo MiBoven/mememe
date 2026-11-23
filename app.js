@@ -3,7 +3,7 @@
  * Client-side meme / grid / comic composer. Everything is drawn on a <canvas>;
  * nothing is uploaded. */
 
-const APP_VERSION = '0.5.1';
+const APP_VERSION = '1.0.0';
 const $ = (id) => document.getElementById(id);
 const isCoarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
 
@@ -146,6 +146,7 @@ function commit() {
   hIndex = history.length - 1;
   updateUndoButtons();
   scheduleSave();
+  renderElementList();
 }
 function restore(s) {
   const o = JSON.parse(s);
@@ -576,6 +577,7 @@ function drawComposition(c, lay, scale, withUI) {
   lay.cells.forEach(cell => drawCaption(c, cell, lay));
   drawNumbers(c, lay);
   state.elements.forEach(el => {
+    if (el.hidden) { geo.delete(el.id); return; }
     const fr = frameOf(el, lay);
     c.save();
     if (el.clip && !fr.canvas) { c.beginPath(); c.rect(fr.x, fr.y, fr.w, fr.h); c.clip(); }
@@ -1310,6 +1312,7 @@ function selPanel() { return sel && sel.kind === 'panel' ? findPanel(sel.id) : n
 function select(next) {
   sel = next;
   syncProps();
+  renderElementList();
   renderStrip();
   scheduleRender();
 }
@@ -2440,9 +2443,26 @@ function hitTest(p) {
   }
   for (let i = state.elements.length - 1; i >= 0; i--) {
     const e = state.elements[i];
+    if (e.hidden) continue;
     const g = geo.get(e.id);
     if (!g) continue;
     const lp = localPoint(g, p);
+    if (e.type === 'shape' && !g.line) {
+      // unfilled shapes are only grabbable at their outline — clicks inside go through
+      const tol = g.sp / 2 + 8 * ds;
+      if (Math.abs(lp.x) > g.w / 2 + tol || Math.abs(lp.y) > g.h / 2 + tol) continue;
+      const filled = e.fillOn && (e.fillOpacity ?? 100) > 0;
+      if (filled && Math.abs(lp.x) <= g.w / 2 && Math.abs(lp.y) <= g.h / 2) return { kind: 'el', el: e };
+      let edge;
+      if (e.kind === 'ellipse') {
+        const a = g.w / 2, b = g.h / 2;
+        edge = Math.abs(Math.hypot(lp.x / a, lp.y / b) - 1) * Math.min(a, b) <= tol;
+      } else {
+        edge = Math.abs(g.w / 2 - Math.abs(lp.x)) <= tol || Math.abs(g.h / 2 - Math.abs(lp.y)) <= tol;
+      }
+      if (edge) return { kind: 'el', el: e };
+      continue;
+    }
     if (Math.abs(lp.x) <= g.w / 2 && Math.abs(lp.y) <= g.h / 2) return { kind: 'el', el: e };
   }
   if (lastLayout) {
@@ -2955,12 +2975,12 @@ $('exFormat').addEventListener('input', () => { settings.format = $('exFormat').
 $('exQuality').addEventListener('input', () => { settings.quality = Number($('exQuality').value); updateValueLabels(); saveSettings(); });
 
 function hasContent() { return state.panels.length > 0 || state.elements.length > 0; }
-async function exportFile() {
+async function exportFile(forceFmt) {
   showOriginal = false;
   await ensureFiltersReady();
   const cv = document.createElement('canvas');
   renderTo(cv, { ui: false, full: true });
-  const fmt = settings.format;
+  const fmt = forceFmt || settings.format;
   const type = 'image/' + fmt;
   if (fmt === 'jpeg' && (state.layout.bgOpacity ?? 100) < 100) {
     // JPG has no transparency → put the result on white
@@ -3006,17 +3026,36 @@ $('downloadBtn').addEventListener('click', async () => {
     $('downloadBtn').disabled = false;
   }
 });
+let canShareFiles = false;
 (function setupShare() {
   try {
     const probe = new File([new Blob(['x'], { type: 'image/png' })], 'x.png', { type: 'image/png' });
-    if (navigator.canShare && navigator.canShare({ files: [probe] })) $('shareBtn').hidden = false;
+    canShareFiles = !!(navigator.canShare && navigator.canShare({ files: [probe] }));
   } catch (e) { /* no File constructor / share API */ }
 })();
 $('shareBtn').addEventListener('click', async () => {
   if (!hasContent()) { toast('Nothing to share yet.'); return; }
-  const file = await exportFile();
-  try { await navigator.share({ files: [file], title: 'mememe' }); }
-  catch (e) { if (e && e.name !== 'AbortError') toast('Sharing failed — use Download instead.'); }
+  $('shareBtn').disabled = true;
+  try {
+    if (canShareFiles) {
+      const file = await exportFile();
+      try { await navigator.share({ files: [file], title: 'mememe' }); }
+      catch (e) { if (e && e.name !== 'AbortError') toast('Sharing failed — use Download instead.'); }
+      return;
+    }
+    if (navigator.clipboard && window.ClipboardItem) {
+      // desktop: copy as PNG (the only image format clipboards accept everywhere)
+      const file = await exportFile('png');
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': file })]);
+      toast('Image copied — paste it into any chat or app (Ctrl+V).', 4000);
+      return;
+    }
+    toast('Sharing isn’t supported in this browser — use Download instead.', 4000);
+  } catch (e) {
+    toast('Couldn’t share or copy the image — use Download instead.', 4000);
+  } finally {
+    $('shareBtn').disabled = false;
+  }
 });
 $('clearAllBtn').addEventListener('click', () => newProject());
 
@@ -3027,9 +3066,14 @@ const EMOJI = {
   Faces: '😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎 🤓 🧐 😕 😟 🙁 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 ☠️ 💩 🤡 👹 👺 👻 👽 🤖',
   Gestures: '👍 👎 👌 🤌 🤏 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ ✋ 🤚 🖐️ 🖖 👋 👏 🙌 👐 🤲 🙏 💪 🫡 🤦 🤷 🙈 🙉 🙊 👀 👁️ 👄 🧠',
   Symbols: '❤️ 🧡 💛 💚 💙 💜 🖤 🤍 💔 💯 💢 💥 💫 💦 💨 💬 💭 🗯️ 💤 ✨ ⭐ 🌟 ⚡ 🔥 💧 ❗ ❓ ‼️ ⁉️ ✅ ❌ ⚠️ 🚫 🔞 🆗 🆒 🆕 🆘 ➡️ ⬅️ ⬆️ ⬇️ 🔴 🟢 🔵',
+  People: '👶 🧒 👦 👧 🧑 👨 👩 🧓 👴 👵 👱 🧔 👮 🕵️ 💂 👷 🤴 👸 👳 🧕 🤵 👰 🤰 🎅 🤶 🦸 🦹 🧙 🧚 🧛 🧜 🧝 🧞 🧟 💆 💇 🚶 🏃 💃 🕺 🧘 🙋 🙅 🙆 💁 🙇 🧑‍⚕️ 🧑‍🍳 🧑‍💻 🧑‍🚀 🧑‍🚒 🧑‍🏫 🧑‍🎓 👪 💏 💑',
   Animals: '🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐔 🐧 🐦 🦆 🦅 🦉 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐢 🐍 🦖 🐙 🦀 🐬 🐳 🦈 🐊 🐘 🦒 🦘',
   Food: '🍕 🍔 🍟 🌭 🌮 🍿 🥨 🥐 🍩 🍪 🎂 🍰 🍫 🍬 🍭 🍦 🍉 🍌 🍎 🍓 🥑 🥦 🌶️ 🥕 🌽 🧀 🥚 🍳 🥓 ☕ 🍺 🍻 🥂 🍷 🍸 🧃',
-  Things: '🎉 🎊 🎈 🎁 🏆 🥇 ⚽ 🏀 🎮 🎲 🎯 🎸 🎤 🎧 📱 💻 ⌨️ 📷 💡 💰 💸 💎 🔑 🔒 🔨 🧨 💣 ⏰ ⌛ 📌 📎 ✏️ 📝 📚 🚀 🚗 🚲 ✈️ 🏠 🏥 🌍 🌈 ☀️ 🌙 ☁️ ⛈️ ❄️ ☃️ 🌊 🌵 🌲 🌸 🍀 👑 🎩 🕶️ 💉 💊 🩺'
+  Nature: '🌞 🌝 🌚 🌛 ⭐ 🌈 ☔ 🌪️ 🌋 🏔️ 🏖️ 🏝️ 🌳 🌴 🍁 🍂 🌻 🌹 🌷 🌼 🍄 🌾 💐 🌱 🪴',
+  Activities: '🏋️ 🚴 🏊 ⛷️ 🏄 🤸 🥊 🎳 🏓 🎾 ⛳ 🎣 🎭 🎨 🎬 📺 🎹 🥁 🎻 🎷 🎺 🧩 ♟️ 🎰',
+  Travel: '🚑 🚓 🚒 🚌 🏎️ 🚂 🚁 🛸 ⛵ 🚢 🛳️ 🏰 🗽 🗼 🎡 🎢 🏕️ ⛺ 🗺️ 🧳',
+  Things: '🎉 🎊 🎈 🎁 🏆 🥇 ⚽ 🏀 🎮 🎲 🎯 🎸 🎤 🎧 📱 💻 ⌨️ 📷 💡 💰 💸 💎 🔑 🔒 🔨 🧨 💣 ⏰ ⌛ 📌 📎 ✏️ 📝 📚 🚀 🚗 🚲 ✈️ 🏠 🏥 🌍 🌈 ☀️ 🌙 ☁️ ⛈️ ❄️ ☃️ 🌊 🌵 🌲 🌸 🍀 👑 🎩 🕶️ 💉 💊 🩺',
+  Flags: '🏳️ 🏴 🏁 🚩 🏳️‍🌈 🏳️‍⚧️ 🏴‍☠️ 🇪🇺 🇺🇳 🇩🇪 🇦🇹 🇨🇭 🇱🇮 🇱🇺 🇳🇱 🇧🇪 🇫🇷 🇬🇧 🇮🇪 🇪🇸 🇵🇹 🇮🇹 🇬🇷 🇩🇰 🇸🇪 🇳🇴 🇫🇮 🇮🇸 🇵🇱 🇨🇿 🇸🇰 🇭🇺 🇸🇮 🇭🇷 🇷🇴 🇧🇬 🇷🇸 🇺🇦 🇹🇷 🇺🇸 🇨🇦 🇲🇽 🇧🇷 🇦🇷 🇨🇱 🇨🇴 🇯🇵 🇰🇷 🇨🇳 🇮🇳 🇹🇭 🇻🇳 🇮🇩 🇵🇭 🇦🇺 🇳🇿 🇿🇦 🇪🇬 🇳🇬 🇰🇪 🇲🇦 🇮🇱 🇸🇦 🇦🇪 🇮🇷'
 };
 function sunglassesSVG() {
   const rows = ['1111111111111111', '0133111001331110', '0031111000311110', '0001111000011110'];
@@ -3069,24 +3113,48 @@ async function addPictureBlob(blob, name, w) {
     closeModal('stickerModal');
   } catch (err) { toast('Could not read that picture.'); }
 }
-(function buildStickerModal() {
+const EMOJI_KEY = 'mememe-emoji';
+function emojiStats() { return safeJSON(localStorage.getItem(EMOJI_KEY)); }
+function countEmoji(em) {
+  const st = emojiStats();
+  const e = st[em] || { n: 0, t: 0 };
+  e.n++; e.t = Date.now();
+  st[em] = e;
+  const keys = Object.keys(st).sort((a, b) => st[b].t - st[a].t);
+  keys.slice(80).forEach(k => delete st[k]); // keep the list small
+  try { localStorage.setItem(EMOJI_KEY, JSON.stringify(st)); } catch (err) { /* ignore */ }
+}
+function addEmoji(em) {
+  countEmoji(em);
+  addElement(newText({ text: em, font: 'emoji', size: 220, w: 0.45, strokeW: 0, stroke: '#ffffff', upper: false, bold: false, italic: false, bgOn: false, shadow: false, color: '#000000', fit: false }));
+  closeModal('stickerModal');
+}
+function buildEmojiGrid() {
   const eg = $('emojiGrid');
-  Object.entries(EMOJI).forEach(([cat, list]) => {
+  eg.innerHTML = '';
+  const section = (title, list) => {
+    if (!list.length) return;
     const h = document.createElement('div');
     h.className = 'ecat';
-    h.textContent = cat;
+    h.textContent = title;
     eg.appendChild(h);
-    list.split(' ').filter(Boolean).forEach(em => {
+    list.forEach(em => {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = em;
-      b.addEventListener('click', () => {
-        addElement(newText({ text: em, font: 'emoji', size: 220, w: 0.45, strokeW: 0, stroke: '#ffffff', upper: false, bold: false, italic: false, bgOn: false, shadow: false, color: '#000000', fit: false }));
-        closeModal('stickerModal');
-      });
+      b.addEventListener('click', () => addEmoji(em));
       eg.appendChild(b);
     });
-  });
+  };
+  const st = emojiStats();
+  const keys = Object.keys(st);
+  const recent = keys.slice().sort((a, b) => st[b].t - st[a].t).slice(0, 8);
+  const frequent = keys.filter(k => st[k].n > 1).sort((a, b) => st[b].n - st[a].n || st[b].t - st[a].t).slice(0, 8);
+  section('Recently used', recent);
+  section('Most used', frequent);
+  Object.entries(EMOJI).forEach(([cat, list]) => section(cat, list.split(' ').filter(Boolean)));
+}
+(function buildStickerGrid() {
   const sg = $('stickerGrid');
   STICKERS.forEach(([name, svg]) => {
     const b = document.createElement('button');
@@ -3101,7 +3169,69 @@ async function addPictureBlob(blob, name, w) {
     sg.appendChild(b);
   });
 })();
-$('addStickerBtn').addEventListener('click', () => openModal('stickerModal'));
+
+// ---------- My stickers: own pictures kept in the browser for all projects ----------
+const sessionStickers = [];   // used when IndexedDB isn't available
+let myStickerUrls = [];
+async function libraryList() {
+  if (!projectsOK) return sessionStickers.slice();
+  return (await dbAll('stickers')).sort((a, b) => b.added - a.added);
+}
+async function libraryAdd(blob, name) {
+  const rec = { id: 'stk-' + uid(), blob, name: name || 'Sticker', added: Date.now() };
+  if (projectsOK) await dbPut('stickers', rec); else sessionStickers.unshift(rec);
+  return rec;
+}
+async function libraryRemove(id) {
+  if (projectsOK) await dbDel('stickers', id);
+  else { const i = sessionStickers.findIndex(r => r.id === id); if (i >= 0) sessionStickers.splice(i, 1); }
+}
+async function useLibrarySticker(rec) {
+  try {
+    if (!images.has(rec.id)) await makeImageEntry(rec.blob, rec.name, '', rec.id);
+    addElement(newPicture(rec.id, { w: 0.35 }));
+    closeModal('stickerModal');
+  } catch (e) { toast('Could not read that sticker.'); }
+}
+async function renderMyStickers() {
+  const grid = $('myStickerGrid');
+  myStickerUrls.forEach(u => URL.revokeObjectURL(u));
+  myStickerUrls = [];
+  grid.innerHTML = '';
+  let list = [];
+  try { list = await libraryList(); } catch (e) { /* ignore */ }
+  if (!list.length) { grid.innerHTML = '<p class="muted small-txt">No stickers saved yet.</p>'; return; }
+  list.forEach(rec => {
+    const wrap = document.createElement('div');
+    wrap.className = 'stk';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.title = 'Add “' + rec.name + '”';
+    const img = document.createElement('img');
+    img.alt = '';
+    const u = URL.createObjectURL(rec.blob);
+    myStickerUrls.push(u);
+    img.src = u;
+    const sp = document.createElement('span');
+    sp.textContent = rec.name;
+    b.append(img, sp);
+    b.addEventListener('click', () => useLibrarySticker(rec));
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'stk-del';
+    del.textContent = '✕';
+    del.title = 'Remove from My stickers (pictures already used in projects stay)';
+    del.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Remove “${rec.name}” from My stickers?`)) return;
+      await libraryRemove(rec.id);
+      renderMyStickers();
+    });
+    wrap.append(b, del);
+    grid.appendChild(wrap);
+  });
+}
+$('addStickerBtn').addEventListener('click', () => { buildEmojiGrid(); renderMyStickers(); openModal('stickerModal'); });
 $('stickerTabs').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-tab]'); if (!b) return;
   $('stickerTabs').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
@@ -3110,9 +3240,23 @@ $('stickerTabs').addEventListener('click', (e) => {
   $('tabPicture').hidden = b.dataset.tab !== 'picture';
 });
 $('pictureFileBtn').addEventListener('click', () => $('pictureInput').click());
-$('pictureInput').addEventListener('change', (e) => {
-  const f = e.target.files[0]; e.target.value = '';
-  if (f) addPictureBlob(f, f.name);
+$('pictureInput').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files || []).filter(isImageFile);
+  e.target.value = '';
+  if (!files.length) return;
+  let last = null;
+  for (const f of files) {
+    try { last = await libraryAdd(f, f.name.replace(/\.[^.]+$/, '')); } catch (err) { toast('Could not save “' + f.name + '”.'); }
+  }
+  if (files.length === 1 && last) { await useLibrarySticker(last); toast('Saved to ★ My stickers.'); }
+  else { renderMyStickers(); toast(`${files.length} pictures saved to ★ My stickers.`); }
+});
+$('picSaveBtn').addEventListener('click', async () => {
+  const el = selEl();
+  const im = el && el.type === 'picture' && images.get(el.imgId);
+  if (!im || !im.blob) { toast('This picture can’t be saved.'); return; }
+  try { await libraryAdd(im.blob, im.name); toast('Saved to ★ My stickers — available in all projects.'); }
+  catch (err) { toast('Saving failed — the browser storage may be full.'); }
 });
 
 // =====================================================================
@@ -3217,6 +3361,13 @@ function setupTplSource() {
   $('tplLoadBtn').textContent = src.kind === 'list' ? 'Load' : 'Search';
   const chips = $('tplChips');
   chips.innerHTML = '';
+  if ((src.chips || []).length) {
+    const lab = document.createElement('span');
+    lab.className = 'chip-label';
+    lab.textContent = 'Examples:';
+    lab.title = 'Sample searches that give good results with this source — just a starting point, you can search for anything.';
+    chips.appendChild(lab);
+  }
   (src.chips || []).forEach(c => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -3402,12 +3553,13 @@ function openDB() {
   if (!dbPromise) {
     dbPromise = new Promise((res, rej) => {
       if (!window.indexedDB) { rej(new Error('IndexedDB unavailable')); return; }
-      const r = indexedDB.open(DB_NAME, 2);
+      const r = indexedDB.open(DB_NAME, 3);
       r.onupgradeneeded = () => {
         const d = r.result;
         if (!d.objectStoreNames.contains('projects')) d.createObjectStore('projects', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('images')) d.createObjectStore('images', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('fonts')) d.createObjectStore('fonts', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('stickers')) d.createObjectStore('stickers', { keyPath: 'id' });
       };
       r.onsuccess = () => res(r.result);
       r.onerror = () => rej(r.error);
@@ -3852,6 +4004,72 @@ async function importProjectFile(file) {
 }
 
 // =====================================================================
+// Elements list, magnet, help
+// =====================================================================
+let elScope = 'image';
+const EL_ICONS = { text: 'T', bubble: '💬', picture: '🖼', draw: '✏️', shape: '◻' };
+function elLabel(el) {
+  if (el.type === 'text') return el.font === 'emoji' ? el.text : '“' + (el.text || '').replace(/\s+/g, ' ').slice(0, 40) + '”';
+  if (el.type === 'bubble') return '“' + (el.text || '').replace(/\s+/g, ' ').slice(0, 40) + '”';
+  if (el.type === 'picture') return (images.get(el.imgId) || {}).name || 'Picture';
+  if (el.type === 'draw') return `Drawing (${(el.strokes || []).filter(s => s.kind !== 'eraser').length} strokes)`;
+  if (el.type === 'shape') return { rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow' }[el.kind] || 'Shape';
+  return el.type;
+}
+function renderElementList() {
+  const card = $('elementsCard');
+  const n = state.elements.length;
+  card.hidden = n === 0;
+  if (!n) return;
+  $('elCount').textContent = `(${n})`;
+  const el = selEl();
+  const pid = detailId || (selPanel() && selPanel().id) || (el && el.panelId) || null;
+  let list = state.elements.slice().reverse(); // topmost first
+  const scoped = elScope === 'image' && pid;
+  if (scoped) list = list.filter(e => e.panelId === pid);
+  $('elScope').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === (scoped ? 'image' : 'all')));
+  const box = $('elList');
+  box.innerHTML = '';
+  if (!list.length) { box.innerHTML = '<p class="muted small-txt">No elements on this image.</p>'; return; }
+  list.forEach(e => {
+    const row = document.createElement('div');
+    row.className = 'el-row' + (sel && sel.id === e.id ? ' sel' : '') + (e.hidden ? ' off' : '');
+    const ic = document.createElement('span'); ic.className = 'ei'; ic.textContent = EL_ICONS[e.type] || '•';
+    const nm = document.createElement('span'); nm.className = 'en'; nm.textContent = elLabel(e);
+    const im = document.createElement('span'); im.className = 'eimg';
+    im.textContent = e.panelId ? '#' + (state.panels.findIndex(q => q.id === e.panelId) + 1) : 'canvas';
+    const eye = document.createElement('button');
+    eye.type = 'button'; eye.textContent = e.hidden ? '🙈' : '👁'; eye.title = e.hidden ? 'Show' : 'Hide';
+    eye.addEventListener('click', (ev) => { ev.stopPropagation(); e.hidden = !e.hidden; commit(); scheduleRender(); });
+    const del = document.createElement('button');
+    del.type = 'button'; del.textContent = '🗑'; del.title = 'Delete';
+    del.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      state.elements = state.elements.filter(x => x !== e);
+      geo.delete(e.id);
+      if (sel && sel.id === e.id) sel = null;
+      commit(); syncProps(); scheduleRender();
+    });
+    row.append(ic, nm, im, eye, del);
+    row.addEventListener('click', () => select({ kind: 'el', id: e.id }));
+    box.appendChild(row);
+  });
+}
+$('elScope').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-v]'); if (!b) return;
+  elScope = b.dataset.v;
+  if (elScope === 'image' && !detailId && !selPanel() && !(selEl() && selEl().panelId)) toast('Select an image (or an element on it) to see only its elements.', 2500);
+  renderElementList();
+});
+function syncSnapUI() { $('snapBtn').classList.toggle('active', !!settings.snap); $('setSnap').checked = !!settings.snap; }
+$('snapBtn').addEventListener('click', () => {
+  settings.snap = !settings.snap;
+  saveSettings(); syncSnapUI();
+  toast(settings.snap ? '🧲 Snapping on' : 'Snapping off', 1400);
+});
+$('helpBtn').addEventListener('click', () => { menu.style.display = 'none'; openModal('helpModal'); });
+
+// =====================================================================
 // Menu, modals, header
 // =====================================================================
 const menu = $('menu');
@@ -3881,7 +4099,7 @@ document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click
 $('setFormat').addEventListener('input', () => { settings.format = $('setFormat').value; $('exFormat').value = settings.format; saveSettings(); });
 $('setWidth').addEventListener('input', () => { settings.width = $('setWidth').value; saveSettings(); });
 $('setSide').addEventListener('input', () => { settings.side = $('setSide').value; saveSettings(); applyLayoutMode(); });
-$('setSnap').addEventListener('input', () => { settings.snap = $('setSnap').checked; saveSettings(); });
+$('setSnap').addEventListener('input', () => { settings.snap = $('setSnap').checked; saveSettings(); syncSnapUI(); });
 $('setDownscale').addEventListener('input', () => { settings.downscale = $('setDownscale').checked; saveSettings(); });
 
 $('resetSettingsBtn').addEventListener('click', () => {
@@ -3936,9 +4154,14 @@ ensureFont('anton');
 ensureFont('comic');
 if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', scheduleRender);
 applyLayoutMode();
+syncSnapUI();
 commit();
 syncAll();
 initProjects();
+if (!localStorage.getItem('mememe-seen')) {
+  setTimeout(() => toast('Welcome to mememe! Tips & gestures: menu ⋮ → ❓ Help', 7000), 1200);
+  try { localStorage.setItem('mememe-seen', '1'); } catch (e) { /* ignore */ }
+}
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));

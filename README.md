@@ -47,7 +47,7 @@ A privacy-friendly web app for making memes, image grids, mosaics, comic pages a
 - New texts / bubbles reuse the style of the last edited one
 
 ### Stickers, emoji & pictures
-- **+ Sticker** opens three tabs: ~400 **emoji** (they scale like stickers; an outline gives them a sticker edge), **built-in vector stickers** (red arrow, red circle, pixel “deal with it” sunglasses, laser eye, censor bar, heart, crown, star burst) and **your own picture** — icons, logos, cut-outs, PNG / JPG / WebP / SVG / GIF (first frame)
+- **+ Sticker** opens three tabs: **emoji** in groups incl. flags, with *Recently used* and *Most used* on top (they scale like stickers; an outline gives them a sticker edge), **built-in vector stickers** (red arrow, red circle, pixel “deal with it” sunglasses, laser eye, censor bar, heart, crown, star burst) and **★ My stickers** — your own pictures (icons, logos, cut-outs, PNG / JPG / WebP / SVG / GIF first frame), kept in the browser for all projects until you remove them; “★ Save” on a picture adds it there
 - Pictures can be resized (keeps the ratio), rotated, mirrored, replaced and faded (opacity), and belong to the image they sit on like texts
 
 ### Freehand drawing
@@ -69,8 +69,10 @@ A privacy-friendly web app for making memes, image grids, mosaics, comic pages a
 - Pinch with two fingers, Ctrl + wheel (or trackpad pinch) or the **+ / − / 1×** buttons on the canvas; move the zoomed view with two fingers, the mouse wheel, **Space + drag** or the middle mouse button
 - Works in the overview and in the detail view; Esc / 1× resets
 
-### Layer order & opacity
+### Elements list, layer order & opacity
+- The **Elements** card (collapsed, only shown when there are elements) lists all elements — topmost first — for the selected image or the whole composition: select, hide / show, delete
 - Every element has an **opacity**; ⇊ ⤓ ⤒ ⇈ send it to the back, one step back, one step forward or to the front
+- Unfilled shapes are only selected at their outline, so you can click elements behind them
 
 ### Detail view
 - Double-tap an image (or press 🔍) to zoom into it and place elements precisely; ◀ ▶ steps through the images, ✕ / Esc / double-tap returns to the overview
@@ -97,12 +99,15 @@ A privacy-friendly web app for making memes, image grids, mosaics, comic pages a
 - Clicking outside the canvas and the editing controls deselects everything
 - Click a setting's label to reset it to its default; every control has a tooltip; *Settings → Reset all settings…* restores factory defaults
 - Export as PNG, JPG or WebP (quality slider); falls back to PNG if a format isn't supported. File name: `mememe_YYYYMMDD_HHMMSS.ext`
-- **Share…** button on devices that support sharing files
+- **↗ Share** sends the image to another app on phones, or copies it to the clipboard on desktop (paste into any chat)
 - Warning before closing only if a save is still pending
 
 ### General
 - Side-by-side view: canvas fixed on the left, toolbar and settings on the right (Auto = in fullscreen on wide screens / Always / Never in Settings); in fullscreen the header stays at the top
 - 📌 pins the canvas to the top while scrolling the settings (portrait)
+- **❓ Help** (menu) explains tips & gestures; a one-time hint points to it on the first visit
+- 🧲 switches snapping on / off
+- Link previews in chats / social media show the logo (dark background), the title with subtitle and a short description
 - Rarely used settings are tucked away under *More options*; Layout, Frame & spacing and Numbering start collapsed
 - Dark mode by default, light mode via the menu; Settings and About in the menu; fullscreen toggle
 - Faster preview on phones (the on-screen canvas renders at screen resolution, exports at full size)
@@ -122,7 +127,7 @@ Every drawing is rendered on its own layer, so eraser strokes (`destination-out`
 
 Decoded images are kept outside the serializable state, so undo/redo only snapshots a small JSON description of the composition.
 
-Projects live in IndexedDB in three stores — `fonts` (custom font files) plus `projects` (name, dates, the JSON state, the ids of the images used, a small JPEG thumbnail) and `images` (one record per image with its blob, shared between duplicated projects). Images that no project references anymore are removed automatically. The `.mememe` export is a stored ZIP built by a small built-in writer (CRC-32 + headers); the importer also accepts deflate-compressed ZIPs via `DecompressionStream`.
+Projects live in IndexedDB — `fonts` (custom font files), `stickers` (★ My stickers) plus `projects` (name, dates, the JSON state, the ids of the images used, a small JPEG thumbnail) and `images` (one record per image with its blob, shared between duplicated projects). Images that no project references anymore are removed automatically. The `.mememe` export is a stored ZIP built by a small built-in writer (CRC-32 + headers); the importer also accepts deflate-compressed ZIPs via `DecompressionStream`.
 
 ## Files
 
@@ -134,7 +139,7 @@ Projects live in IndexedDB in three stores — `fonts` (custom font files) plus 
 - `netlify.toml` — security headers (CSP allows `https:` images/requests for templates and web addresses)
 - `fonts/` — bundled WOFF fonts, `OFL.txt` license and `README.md` with copyrights
 - `icons/` — `favicon-16x16.png`, `favicon-32x32.png`, `apple-touch-icon.png`
-- Repo root — `favicon.ico`, `android-chrome-192x192.png`, `android-chrome-512x512.png`
+- Repo root — `favicon.ico`, `android-chrome-192x192.png`, `android-chrome-512x512.png`, `og-image.png` (link preview, no transparency)
 
 ## Browser support
 

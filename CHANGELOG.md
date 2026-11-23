@@ -1,5 +1,17 @@
 # Changelog
 
+### 1.0.0 — 2026-11-23 — First stable release
+- **Elements list** (collapsed, only shown when there are elements): all texts, bubbles, stickers, shapes and drawings — topmost first — for the selected image or the whole composition; select, hide / show, delete
+- **🧲 Magnet** button in the toolbar to switch snapping on and off (same setting as in Settings)
+- **↗ Share** is always available: shares the file on phones, copies the image to the clipboard on desktop
+- Unfilled shapes can now be clicked through — only their outline selects them, so elements behind them stay reachable
+- Emoji: new groups People, Nature, Activities, Travel and **Flags**; **Recently used** and **Most used** emoji on top
+- **★ My stickers:** your own pictures are kept in the browser for all projects (add several at once, remove them again); a picture on the canvas can be saved there with “★ Save”
+- Template search suggestions are labelled “Examples” with an explanation
+- **❓ Help** in the menu with tips & gestures, plus a one-time welcome hint
+- Link preview image with a dark background (chat apps showed the transparent logo corners in white)
+- Visible keyboard focus outlines
+
 ### 0.5.1 — 2026-11-23 — Link previews
 - Added Open Graph / Twitter meta tags so shared links show the logo, the title with subtitle and a short description in chats (WhatsApp, Signal, Telegram, …) and social media
 
