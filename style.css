@@ -385,3 +385,45 @@ body.side #ctrlBlock > .toolbar { margin-bottom: 12px; }
 .proj .pmeta { font-size: 12px; color: var(--text-secondary); }
 .proj .pbtns { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 140px; }
 .proj .tag { font-size: 10px; font-weight: 700; color: var(--accent); text-transform: uppercase; margin-left: 4px; }
+
+/* ---------- v0.4.0 ---------- */
+.stage { position: relative; }
+.zoom-ctl {
+  position: absolute; right: 8px; bottom: 8px; display: flex; gap: 2px; z-index: 3;
+  background: rgba(20,20,20,.72); border-radius: 9px; padding: 3px; backdrop-filter: blur(4px);
+}
+.zoom-ctl button {
+  background: none; border: none; color: #fff; min-width: 30px; height: 28px; font-size: 15px; font-weight: 700;
+  border-radius: 6px; cursor: pointer; padding: 0 6px;
+}
+.zoom-ctl button:hover { background: rgba(255,255,255,.15); }
+#canvas.drawing { cursor: crosshair; }
+#canvas.panning { cursor: grab; }
+#drawBtn.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.swatches { display: flex; gap: 4px; flex-wrap: wrap; }
+.swatches button { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); cursor: pointer; padding: 0; }
+.seg-mini button { padding: 0 6px; }
+#rowsEditor { margin: 10px 0 4px; padding: 10px; background: var(--surface-2); border-radius: 10px; }
+#rowsEditor .chips { margin: 0 0 8px; }
+.row-def { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.row-def span.rl { font-size: 12px; color: var(--text-secondary); min-width: 44px; }
+.row-def select { flex: 0 0 auto; padding: 5px 6px; }
+.row-def input[type=range] { flex: 1; }
+.add-row { margin-top: 8px; }
+.segment { display: flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; gap: 3px; margin-bottom: 12px; }
+.segment button { flex: 1; background: none; border: none; color: var(--text-secondary); padding: 8px 6px; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.segment button.active { background: var(--accent); color: var(--accent-text); }
+.emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px; max-height: 50vh; overflow-y: auto; }
+.emoji-grid button { font-size: 28px; line-height: 1; height: 46px; background: var(--surface-2); border: 1px solid transparent; border-radius: 8px; cursor: pointer; font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif; }
+.emoji-grid button:hover { border-color: var(--accent); }
+.emoji-grid .ecat { grid-column: 1 / -1; font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-top: 6px; }
+.sticker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.sticker-grid button {
+  background-color: var(--checker-b);
+  background-image: linear-gradient(45deg, var(--checker-a) 25%, transparent 25%), linear-gradient(-45deg, var(--checker-a) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--checker-a) 75%), linear-gradient(-45deg, transparent 75%, var(--checker-a) 75%);
+  background-size: 14px 14px; background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px; cursor: pointer; color: var(--text); font-size: 11px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.sticker-grid img { width: 100%; height: 64px; object-fit: contain; }
+.btn.small.secondary { flex: 0 0 auto; }

@@ -1,5 +1,18 @@
 # Changelog
 
+### 0.4.0 — 2026-11-23 — Stickers, drawing, zoom, rotation, comic rows
+- **+ Sticker:** ~400 emoji (scale like stickers, optional outline), 8 built-in vector stickers (red arrow, red circle, pixel sunglasses, laser eye, censor bar, heart, crown, star burst) and your own pictures (PNG, JPG, WebP, SVG, GIF first frame, …) on top of the images
+- **Opacity** for every element (text, bubble, emoji, picture, drawing); rotation for texts, pictures and drawings (−180° … 180°)
+- **Freehand drawing** (✏️): pen, translucent marker and stroke eraser, colors, size, opacity; every image gets its own drawing, which afterwards can be moved, resized, rotated, faded or continued (“Draw more”)
+- **Zoom & move the view:** pinch with two fingers, Ctrl + wheel / trackpad pinch, + / − / 1× buttons on the canvas; move around with two fingers, the wheel, Space + drag or the middle mouse button — also inside the detail view
+- **Rotate images** in 90° steps (⟲ ⟳) and straighten them (−45° … 45°, under More options)
+- **Comic rows (custom):** new cell mode with rows of different panel counts and heights, ready-made page layouts (1·4·1, 2·3·2, 1·2·2, 2·1·2, 3·3·3, Big + 2, Strip of 4) and a per-panel width share; the Comic page preset uses it
+- **Bring to front / send to back** for elements, next to the one-step buttons
+- Rows that aren't full are filled with the line color (when lines between images are on)
+- Custom fonts are now stored in the browser (available in all projects after reloading) and travel inside exported `.mememe` files
+- “All images at original size” now uses an exact calculation for every layout mode
+- Fixed: very long words / emoji are no longer split in the middle of a character
+
 ### 0.3.0 — 2026-11-23 — Projects
 - Projects are saved automatically in the browser (IndexedDB, images included) about a second after every change, and when the tab is hidden or closed
 - The last open project is restored automatically when the app is opened again

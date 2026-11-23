@@ -3,7 +3,7 @@
  * Client-side meme / grid / comic composer. Everything is drawn on a <canvas>;
  * nothing is uploaded. */
 
-const APP_VERSION = '0.3.0';
+const APP_VERSION = '0.4.0';
 const $ = (id) => document.getElementById(id);
 const isCoarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
 
@@ -21,7 +21,8 @@ const FONTS = [
   { id: 'bitter', label: 'Bitter (serif)', family: '"Bitter", Georgia, serif', load: 'Bitter' },
   { id: 'mono', label: 'Anonymous Pro (mono)', family: '"Anonymous Pro", ui-monospace, monospace', load: 'Anonymous Pro' },
   { id: 'system', label: 'System sans', family: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' },
-  { id: 'hand', label: 'Handwriting (system)', family: '"Segoe Print", "Bradley Hand", "Comic Sans MS", cursive' }
+  { id: 'hand', label: 'Handwriting (system)', family: '"Segoe Print", "Bradley Hand", "Comic Sans MS", cursive' },
+  { id: 'emoji', label: 'Emoji (system)', family: '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif' }
 ];
 let customFontCount = 0;
 const loadedFonts = new Set();
@@ -81,22 +82,25 @@ function defaultLayout() {
     num: {
       on: false, format: '1', shape: 'circle', font: 'archivo', size: 40, color: '#ffffff', bg: '#111111',
       border: '#ffffff', borderW: 3, anchor: 'tl', margin: 20
-    }
+    },
+    rows: [{ n: 1, h: 45 }, { n: 3, h: 32 }, { n: 2, h: 40 }] // custom comic rows: panels per row, height in % of the width
   };
 }
 // Element defaults (also used by "click label to reset").
 const TEXT_DEFAULTS = {
   font: 'anton', size: 72, color: '#ffffff', stroke: '#000000', strokeW: 8, bgOn: false, bg: '#000000', bgOpacity: 60,
-  align: 'center', bold: false, italic: false, upper: true, shadow: false, rot: 0, fit: false, clip: false, pin: 'auto', margin: 30
+  align: 'center', bold: false, italic: false, upper: true, shadow: false, rot: 0, fit: false, clip: false, pin: 'auto', margin: 30, opacity: 100
 };
 const BUBBLE_DEFAULTS = {
   font: 'comic', size: 40, color: '#111111', stroke: '#ffffff', strokeW: 0, bgOn: false, bg: '#000000', bgOpacity: 0,
   align: 'center', bold: true, italic: false, upper: false, shadow: false, rot: 0, fit: true, clip: false, pin: 'auto', margin: 30,
-  shape: 'oval', fill: '#ffffff', fillOpacity: 100, border: '#111111', borderW: 4, tail: true, autoH: true
+  shape: 'oval', fill: '#ffffff', fillOpacity: 100, border: '#111111', borderW: 4, tail: true, autoH: true, opacity: 100
 };
+const PICTURE_DEFAULTS = { opacity: 100, rot: 0, flip: false, clip: false, pin: 'auto', margin: 30 };
+const DRAW_DEFAULTS = { opacity: 100, rot: 0, clip: false, pin: 'auto', margin: 30 };
 const PANEL_DEFAULTS = {
   fit: '', zoom: 1, offX: 0, offY: 0, span: 1, color: '#ffffff', caption: '', flip: false,
-  numText: '', numHide: false, numOwn: false, numColor: '#ffffff', numBg: '#e53935'
+  numText: '', numHide: false, numOwn: false, numColor: '#ffffff', numBg: '#e53935', rot: 0, straight: 0, weight: 1
 };
 const state = { layout: defaultLayout(), panels: [], elements: [] };
 
@@ -116,7 +120,7 @@ const lastStyle = { text: null, bubble: null };
 const STYLE_KEYS = ['font', 'size', 'color', 'stroke', 'strokeW', 'bgOn', 'bg', 'bgOpacity', 'align', 'bold', 'italic', 'upper', 'shadow',
   'shape', 'fill', 'fillOpacity', 'border', 'borderW'];
 // Keys measured in "frame units" — rescaled when an element moves to a differently sized image.
-const SCALE_KEYS = ['size', 'w', 'h', 'strokeW', 'borderW', 'margin'];
+const SCALE_KEYS = ['size', 'w', 'h', 'strokeW', 'borderW', 'margin', 's'];
 
 let idCounter = 0;
 function uid() { return (Date.now().toString(36) + (idCounter++).toString(36) + Math.random().toString(36).slice(2, 5)); }
@@ -228,13 +232,15 @@ function wrapLines(ctx, text, maxW) {
       const test = line ? line + ' ' + w : w;
       if (ctx.measureText(test).width <= maxW) { line = test; continue; }
       if (line) { out.push(line); line = ''; }
-      while (w.length > 1 && ctx.measureText(w).width > maxW) {
-        let i = w.length - 1;
-        while (i > 1 && ctx.measureText(w.slice(0, i)).width > maxW) i--;
-        out.push(w.slice(0, i));
-        w = w.slice(i);
+      // hard-break over-long words by code points (never split an emoji's surrogate pair)
+      let chars = Array.from(w);
+      while (chars.length > 1 && ctx.measureText(chars.join('')).width > maxW) {
+        let i = chars.length - 1;
+        while (i > 1 && ctx.measureText(chars.slice(0, i).join('')).width > maxW) i--;
+        out.push(chars.slice(0, i).join(''));
+        chars = chars.slice(i);
       }
-      line = w;
+      line = chars.join('');
     }
     out.push(line);
   }
@@ -279,10 +285,11 @@ function drawLines(ctx, lines, x0, areaW, yTop, lineH, st, px, strokePx) {
 // =====================================================================
 // Layout
 // =====================================================================
+const isQuarter = (p) => ((((p.rot || 0) % 180) + 180) % 180) === 90;
 function panelAspect(p) {
   if (p.type === 'image') {
     const im = images.get(p.imgId);
-    if (im) return im.w / im.h;
+    if (im) return isQuarter(p) ? im.h / im.w : im.w / im.h;
   }
   return 1;
 }
@@ -296,35 +303,26 @@ function firstImage() {
   return p ? images.get(p.imgId) : null;
 }
 function firstAspect() {
-  const im = firstImage();
-  return im ? im.w / im.h : 1;
+  const p = state.panels.find(q => q.type === 'image' && images.get(q.imgId));
+  return p ? panelAspect(p) : 1;
 }
 // Width needed so that every image is drawn at (at least) its original pixel size.
+// Everything in the layout scales linearly with the width, so measure at 1000 px.
 function detailWidth() {
-  const L = state.layout, cols = getCols();
-  const imgPanels = state.panels.filter(p => p.type === 'image' && images.get(p.imgId));
-  if (!imgPanels.length) return 1080;
-  const frac = Math.max(0.2, 1 - (2 * L.pad + (cols - 1) * L.gap) / 1000);
-  if (L.mode === 'justified') {
-    let best = 0;
-    for (let i = 0; i < state.panels.length; i += cols) {
-      const chunk = state.panels.slice(i, i + cols);
-      const sumA = chunk.reduce((a, p) => a + panelAspect(p), 0);
-      const maxH = Math.max(1, ...chunk.filter(p => p.type === 'image' && images.get(p.imgId)).map(p => images.get(p.imgId).h));
-      best = Math.max(best, sumA * maxH);
-    }
-    return best / frac;
-  }
-  const aspect = L.aspect === 'first' ? firstAspect() : parseFloat(L.aspect) || 1;
-  let cwNeed = 0;
-  imgPanels.forEach(p => {
-    const im = images.get(p.imgId);
+  const L = state.layout;
+  const lay = layoutAt(ctx, 1000);
+  let need = 0;
+  lay.cells.forEach(cell => {
+    const p = cell.p;
+    const im = p.type === 'image' && images.get(p.imgId);
+    if (!im) return;
+    const iw = isQuarter(p) ? im.h : im.w, ih = isQuarter(p) ? im.w : im.h;
+    const a = cell.w / cell.h;
     const fit = p.fit || L.fit;
-    const need = fit === 'cover' ? Math.min(im.w, im.h * aspect) : Math.max(im.w, im.h * aspect);
-    const span = clamp(p.span || 1, 1, cols);
-    cwNeed = Math.max(cwNeed, need / (p.zoom || 1) / span);
+    const nw = fit === 'cover' ? Math.min(iw, ih * a) : Math.max(iw, ih * a);
+    need = Math.max(need, nw / (p.zoom || 1) / (cell.w / 1000));
   });
-  return (cols * cwNeed) / frac;
+  return need || 1080;
 }
 function baseWidth() {
   const L = state.layout;
@@ -361,7 +359,8 @@ function layoutAt(ctx, W) {
   const s = W / 1000;
   const gap = L.gap * s, pad = L.pad * s;
   const inner = W - 2 * pad;
-  const cols = getCols();
+  const defs = (L.rows && L.rows.length) ? L.rows : [{ n: 2, h: 40 }];
+  const cols = L.mode === 'custom' ? Math.max(1, ...defs.map(d => clamp(d.n | 0, 1, 6))) : getCols();
   const cu = inner / cols / 1000; // "column unit" for captions & numbers
   const cells = [];
   const panels = state.panels;
@@ -379,6 +378,19 @@ function layoutAt(ctx, W) {
       let x = pad;
       rows.push({ h, cells: chunk.map(p => { const w = panelAspect(p) * h; const c = { p, x, w }; x += w + gap; return c; }) });
     }
+  } else if (L.mode === 'custom') {
+    let i = 0, r = 0;
+    while (i < panels.length) {
+      const d = defs[Math.min(r, defs.length - 1)];
+      const n = clamp(d.n | 0, 1, 6);
+      const chunk = panels.slice(i, i + n);
+      const h = inner * clamp(d.h || 40, 5, 300) / 100;
+      const sumW = chunk.reduce((a, p) => a + (p.weight || 1), 0);
+      const avail = inner - (chunk.length - 1) * gap;
+      let x = pad;
+      rows.push({ h, cells: chunk.map(p => { const w = avail * (p.weight || 1) / sumW; const c = { p, x, w }; x += w + gap; return c; }) });
+      i += n; r++;
+    }
   } else {
     const aspect = L.aspect === 'first' ? firstAspect() : parseFloat(L.aspect) || 1;
     const cw = (inner - (cols - 1) * gap) / cols;
@@ -393,6 +405,7 @@ function layoutAt(ctx, W) {
     if (cur.length) rows.push({ h: ch, cells: cur });
   }
   let y = pad;
+  const rowBoxes = [];
   for (const row of rows) {
     let barH = 0;
     if (bar) row.cells.forEach(c => { barH = Math.max(barH, captionGeom(ctx, c.p.caption || '', c.w, cu).h); });
@@ -402,10 +415,12 @@ function layoutAt(ctx, W) {
       if (bar && barH > 0) cell.capRect = { x: c.x, y: L.cap.pos === 'above' ? y : imgY + row.h, w: c.w, h: barH };
       cells.push(cell);
     }
+    const last = row.cells[row.cells.length - 1];
+    rowBoxes.push({ y0: y, y1: y + row.h + barH, xEnd: last.x + last.w });
     y += row.h + barH + gap;
   }
   const H = Math.max(1, Math.round(y - gap + pad));
-  return { W: Math.round(W), H, s, cu, gap, pad, cells };
+  return { W: Math.round(W), H, s, cu, gap, pad, cells, rows: rowBoxes };
 }
 function bgStyle() { const L = state.layout; return hexToRgba(L.bg, (L.bgOpacity ?? 100) / 100); }
 function canvasFrame(lay) { return { x: 0, y: 0, w: lay.W, h: lay.H, canvas: true }; }
@@ -464,16 +479,50 @@ function displayView(lay) {
       updateDetailBar();
     }
   }
+  // user zoom (pinch / wheel / buttons) inside the base rect
+  const baseKey = detailId || '';
+  if (baseKey !== lastBaseKey) { lastBaseKey = baseKey; zoom.z = 1; zoom.cx = zoom.cy = null; updateZoomUI(); }
+  lastBase = Object.assign({}, rect);
+  if (zoom.z > 1.001) {
+    const w = rect.w / zoom.z, h = rect.h / zoom.z;
+    const cx = clamp(zoom.cx ?? rect.x + rect.w / 2, rect.x + w / 2, rect.x + rect.w - w / 2);
+    const cy = clamp(zoom.cy ?? rect.y + rect.h / 2, rect.y + h / 2, rect.y + rect.h - h / 2);
+    zoom.cx = cx; zoom.cy = cy;
+    rect = { x: cx - w / 2, y: cy - h / 2, w, h };
+  }
   const stage = $('stage');
   const cssW = Math.max(200, stage.clientWidth - 22);
   const target = cssW * (window.devicePixelRatio || 1);
   // Phones: draw only as many pixels as the screen shows (fast). Desktop: at least full resolution.
   let scale = isCoarse ? target / rect.w : Math.max(1, target / rect.w);
-  scale = Math.min(scale, 4);
+  scale = Math.min(scale, 24);
   const area = rect.w * rect.h * scale * scale;
   if (area > MAX_AREA) scale *= Math.sqrt(MAX_AREA / area);
   return Object.assign(rect, { scale });
 }
+
+// ---------- view zoom ----------
+const zoom = { z: 1, cx: null, cy: null };
+let lastBase = null, lastBaseKey = '';
+function updateZoomUI() { const b = $('zoomFit'); if (b) b.textContent = zoom.z > 1.01 ? zoom.z.toFixed(1) + '×' : '1×'; }
+function resetZoom() { zoom.z = 1; zoom.cx = zoom.cy = null; updateZoomUI(); scheduleRender(); }
+// Zoom so that composition point (px, py) ends up at fraction (fx, fy) of the canvas.
+function zoomTo(z, px, py, fx, fy) {
+  const b = lastBase;
+  if (!b) return;
+  zoom.z = clamp(z, 1, 8);
+  const w = b.w / zoom.z, h = b.h / zoom.z;
+  zoom.cx = px - fx * w + w / 2;
+  zoom.cy = py - fy * h + h / 2;
+  updateZoomUI();
+  scheduleRender();
+}
+function zoomBy(f, px, py) {
+  const v = lastView;
+  if (px == null) { px = v.x + v.w / 2; py = v.y + v.h / 2; }
+  zoomTo(zoom.z * f, px, py, (px - v.x) / v.w, (py - v.y) / v.h);
+}
+function panViewTo(cx, cy) { if (zoom.z <= 1.001) return; zoom.cx = cx; zoom.cy = cy; scheduleRender(); }
 
 function renderTo(cv, opt) {
   const c = cv.getContext('2d');
@@ -512,6 +561,10 @@ function drawComposition(c, lay, scale, withUI) {
       if (cell.capRect) { y0 = Math.min(y0, cell.capRect.y); y1 = Math.max(y1, cell.capRect.y + cell.capRect.h); }
       c.fillRect(cell.x - gap / 2, y0 - gap / 2, cell.w + gap, y1 - y0 + gap);
     });
+    // rows that aren't full: fill the empty rest with the line color as well
+    (lay.rows || []).forEach(r => {
+      if (r.xEnd < W - pad - 0.5) c.fillRect(r.xEnd, r.y0 - gap / 2, W - pad - r.xEnd, r.y1 - r.y0 + gap);
+    });
     c.restore();
   }
   lay.cells.forEach(cell => drawPanel(c, cell, lay));
@@ -519,11 +572,14 @@ function drawComposition(c, lay, scale, withUI) {
   drawNumbers(c, lay);
   state.elements.forEach(el => {
     const fr = frameOf(el, lay);
-    const clip = el.clip && !fr.canvas;
-    if (clip) { c.save(); c.beginPath(); c.rect(fr.x, fr.y, fr.w, fr.h); c.clip(); }
+    c.save();
+    if (el.clip && !fr.canvas) { c.beginPath(); c.rect(fr.x, fr.y, fr.w, fr.h); c.clip(); }
+    c.globalAlpha = clamp((el.opacity ?? 100) / 100, 0, 1);
     if (el.type === 'text') drawTextEl(c, el, fr);
-    else drawBubbleEl(c, el, fr, lay, scale);
-    if (clip) c.restore();
+    else if (el.type === 'bubble') drawBubbleEl(c, el, fr, lay, scale);
+    else if (el.type === 'picture') drawPictureEl(c, el, fr);
+    else if (el.type === 'draw') drawDrawEl(c, el, fr);
+    c.restore();
   });
   if (withUI) drawSelection(c, lay);
 }
@@ -546,22 +602,28 @@ function drawPanel(c, cell, lay) {
       c.fillRect(x, y, w, h);
       const fit = p.fit || L.fit;
       const zoom = p.zoom || 1;
-      let dw, dh;
-      if (fit === 'stretch') { dw = w * zoom; dh = h * zoom; }
-      else {
-        const sc = (fit === 'contain' ? Math.min(w / im.w, h / im.h) : Math.max(w / im.w, h / im.h)) * zoom;
-        dw = im.w * sc; dh = im.h * sc;
-      }
-      const dx = dw <= w ? x + (w - dw) / 2 : x - (dw - w) * ((p.offX || 0) + 1) / 2;
-      const dy = dh <= h ? y + (h - dh) / 2 : y - (dh - h) * ((p.offY || 0) + 1) / 2;
-      cell.draw = { dw, dh };
-      if (p.flip) {
-        c.translate(dx + dw / 2, 0);
-        c.scale(-1, 1);
-        c.drawImage(im.src, -dw / 2, dy, dw, dh);
+      const q = isQuarter(p);
+      const iw = q ? im.h : im.w, ih = q ? im.w : im.h;      // upright size after 90° steps
+      const st = (p.straight || 0) * Math.PI / 180;            // fine "straighten" angle
+      const ca = Math.abs(Math.cos(st)), sa = Math.abs(Math.sin(st));
+      let bw, bh, dw0, dh0;                                    // bounding box on screen / drawn size
+      if (fit === 'stretch') {
+        bw = w * zoom; bh = h * zoom;
+        dw0 = (q ? bh : bw); dh0 = (q ? bw : bh);
       } else {
-        c.drawImage(im.src, dx, dy, dw, dh);
+        const sc = (fit === 'contain'
+          ? Math.min(w / (iw * ca + ih * sa), h / (iw * sa + ih * ca))
+          : Math.max((w * ca + h * sa) / iw, (w * sa + h * ca) / ih)) * zoom;
+        bw = (iw * ca + ih * sa) * sc; bh = (iw * sa + ih * ca) * sc;
+        dw0 = im.w * sc; dh0 = im.h * sc;
       }
+      const ox = bw > w ? -(bw - w) / 2 * (p.offX || 0) : 0;
+      const oy = bh > h ? -(bh - h) / 2 * (p.offY || 0) : 0;
+      cell.draw = { dw: bw, dh: bh };
+      const ang = ((p.rot || 0) + (p.straight || 0)) * Math.PI / 180;
+      c.translate(x + w / 2 + ox, y + h / 2 + oy);
+      if (p.flip) { c.scale(-1, 1); c.rotate(-ang); } else c.rotate(ang);
+      c.drawImage(im.src, -dw0 / 2, -dh0 / 2, dw0, dh0);
     } else {
       c.fillStyle = '#888';
       c.fillRect(x, y, w, h);
@@ -870,10 +932,11 @@ function drawBubbleEl(c, el, fr, lay, scale) {
     const fa = prepScratch(scratchFill, sw, sh, scale, x0, y0);
     fa.fillStyle = el.fill;
     shapes.forEach(p => fa.fill(p));
+    const ea = c.globalAlpha;
     c.save();
-    c.globalAlpha = clamp((el.fillOpacity ?? 100) / 100, 0, 1);
+    c.globalAlpha = ea * clamp((el.fillOpacity ?? 100) / 100, 0, 1);
     c.drawImage(scratchFill, 0, 0, sw, sh, x0, y0, sw / scale, sh / scale);
-    c.globalAlpha = 1;
+    c.globalAlpha = ea;
     if (bwPx > 0) {
       const la = prepScratch(scratchLine, sw, sh, scale, x0, y0);
       la.lineWidth = bwPx * 2;
@@ -894,6 +957,74 @@ function drawBubbleEl(c, el, fr, lay, scale) {
   c.font = fontString(el.font, g.px, el.bold, el.italic);
   drawLines(c, g.lines, g.cx - g.maxW / 2, g.maxW, g.cy - g.textH / 2, g.lineH, el, g.px, g.strokePx);
   c.restore();
+}
+
+// ---------- Pictures (stickers, own images) ----------
+function pictureGeom(el, fr) {
+  const im = images.get(el.imgId);
+  const a = im ? im.w / im.h : 1;
+  const w = Math.max(4, el.w * fr.w);
+  return { type: 'picture', w, h: w / a, cx: fr.x + el.x * fr.w, cy: fr.y + el.y * fr.h, rot: (el.rot || 0) * Math.PI / 180, frame: fr };
+}
+function drawPictureEl(c, el, fr) {
+  const g = pictureGeom(el, fr);
+  geo.set(el.id, g);
+  const im = images.get(el.imgId);
+  if (!im) return;
+  c.translate(g.cx, g.cy);
+  c.rotate(g.rot);
+  if (el.flip) c.scale(-1, 1);
+  c.drawImage(im.src, -g.w / 2, -g.h / 2, g.w, g.h);
+}
+
+// ---------- Freehand drawings ----------
+// Points are stored relative to the drawing's origin, in units of
+// (frame width × el.s), as a flat [x, y, x, y, …] array per stroke.
+function drawGeom(el, fr) {
+  const k = fr.w * (el.s || 1);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  (el.strokes || []).forEach(st => {
+    const r = st.size / 2, p = st.pts;
+    for (let i = 0; i < p.length; i += 2) {
+      x0 = Math.min(x0, p[i] - r); x1 = Math.max(x1, p[i] + r);
+      y0 = Math.min(y0, p[i + 1] - r); y1 = Math.max(y1, p[i + 1] + r);
+    }
+  });
+  if (!isFinite(x0)) { x0 = y0 = -0.01; x1 = y1 = 0.01; }
+  const ox = fr.x + el.x * fr.w, oy = fr.y + el.y * fr.h, rot = (el.rot || 0) * Math.PI / 180;
+  const mx = (x0 + x1) / 2 * k, my = (y0 + y1) / 2 * k;
+  return {
+    type: 'draw', w: Math.max(8, (x1 - x0) * k), h: Math.max(8, (y1 - y0) * k), k, ox, oy, rot, frame: fr,
+    cx: ox + mx * Math.cos(rot) - my * Math.sin(rot), cy: oy + mx * Math.sin(rot) + my * Math.cos(rot)
+  };
+}
+function strokePath(c, st, k) {
+  const p = st.pts;
+  if (p.length < 2) return;
+  c.save();
+  c.globalAlpha *= (st.alpha ?? 1);
+  c.strokeStyle = st.color;
+  c.lineWidth = Math.max(0.5, st.size * k);
+  c.lineCap = st.kind === 'marker' ? 'square' : 'round';
+  c.lineJoin = 'round';
+  c.beginPath();
+  c.moveTo(p[0] * k, p[1] * k);
+  if (p.length === 2) c.lineTo(p[0] * k + 0.01, p[1] * k);
+  else {
+    for (let i = 2; i < p.length - 2; i += 2) {
+      c.quadraticCurveTo(p[i] * k, p[i + 1] * k, (p[i] + p[i + 2]) / 2 * k, (p[i + 1] + p[i + 3]) / 2 * k);
+    }
+    c.lineTo(p[p.length - 2] * k, p[p.length - 1] * k);
+  }
+  c.stroke();
+  c.restore();
+}
+function drawDrawEl(c, el, fr) {
+  const g = drawGeom(el, fr);
+  geo.set(el.id, g);
+  c.translate(g.ox, g.oy);
+  c.rotate(g.rot);
+  (el.strokes || []).forEach(st => strokePath(c, st, g.k));
 }
 
 // ---------- Selection overlay ----------
@@ -978,7 +1109,12 @@ function moveToFrame(el, from, to) {
   }
   el.panelId = to.canvas ? null : to.p.id;
 }
-function geomFor(el, fr) { return el.type === 'text' ? textGeom(ctx, el, fr) : bubbleGeom(ctx, el, fr); }
+function geomFor(el, fr) {
+  if (el.type === 'bubble') return bubbleGeom(ctx, el, fr);
+  if (el.type === 'picture') return pictureGeom(el, fr);
+  if (el.type === 'draw') return drawGeom(el, fr);
+  return textGeom(ctx, el, fr);
+}
 function alignElement(el, a, lay) {
   lay = lay || lastLayout;
   if (!lay) return;
@@ -1010,7 +1146,7 @@ async function decodeBlob(blob) {
       i.onerror = rej;
       i.src = url;
     });
-    return { src: img, w: img.naturalWidth, h: img.naturalHeight, url };
+    return { src: img, w: img.naturalWidth || 512, h: img.naturalHeight || 512, url };
   } catch (e) {
     URL.revokeObjectURL(url);
     throw e;
@@ -1171,9 +1307,9 @@ const PRESETS = {
     hint: 'Mosaic: images keep their ratios; each row is scaled to the same width.'
   },
   comic: {
-    layout: { cols: '3', mode: 'uniform', aspect: '1.3333', fit: 'cover', gap: 16, gapColor: '#ffffff', pad: 24, padColor: '#ffffff', border: 5, borderColor: '#111111', radius: 4, bg: '#ffffff' },
+    layout: { mode: 'custom', rows: [{ n: 2, h: 40 }, { n: 3, h: 32 }, { n: 2, h: 40 }], fit: 'cover', gap: 16, gapColor: '#ffffff', pad: 24, padColor: '#ffffff', border: 5, borderColor: '#111111', radius: 4, bg: '#ffffff' },
     cap: { pos: 'overlayTop', font: 'comic', size: 40, color: '#111111', strokeW: 0, bg: '#fff6c8', bgOpacity: 100, align: 'left', bold: true, italic: false, upper: true },
-    hint: 'Comic page: captions become narration boxes. Make a panel wider via More options → Width, add bubbles with “+ Bubble”.'
+    hint: 'Comic page: rows with different panel counts and heights (edit them under Layout). Captions become narration boxes, add bubbles with “+ Bubble”.'
   },
   story: {
     layout: { cols: '1', mode: 'uniform', aspect: 'first', fit: 'cover', gap: 8, gapColor: '#000000', pad: 8, padColor: '#000000', border: 0, radius: 0, bg: '#000000' },
@@ -1184,7 +1320,7 @@ const PRESETS = {
 function applyPreset(name) {
   const p = PRESETS[name];
   if (!p) return;
-  Object.assign(state.layout, p.layout);
+  Object.assign(state.layout, JSON.parse(JSON.stringify(p.layout)));
   Object.assign(state.layout.cap, p.cap);
   ensureFont(state.layout.cap.font);
   commit();
@@ -1333,19 +1469,35 @@ function setSeg(segId, value, boolObj) {
 function syncProps() {
   const el = selEl();
   const p = selPanel();
-  $('propsEmpty').hidden = !!(el || p);
-  $('propsElement').hidden = !el;
-  $('propsPanel').hidden = !p;
+  const dr = typeof drawState !== 'undefined' && drawState.on;
+  $('propsDraw').hidden = !dr;
+  $('propsEmpty').hidden = !!(el || p) || dr;
+  $('propsElement').hidden = !el || dr;
+  $('propsPanel').hidden = !p || dr;
   if (el) {
-    const isB = el.type === 'bubble';
-    $('elTitle').textContent = (isB ? 'Speech bubble' : 'Text') + (el.panelId ? ` · image ${state.panels.findIndex(q => q.id === el.panelId) + 1}` : ' · canvas');
-    $('elText').value = el.text;
+    const t = el.type, isB = t === 'bubble', isT = t === 'text', isP = t === 'picture', isD = t === 'draw';
+    const name = isB ? 'Speech bubble' : isP ? 'Picture' : isD ? 'Drawing' : el.font === 'emoji' ? 'Emoji' : 'Text';
+    $('elTitle').textContent = name + (el.panelId ? ` · image ${state.panels.findIndex(q => q.id === el.panelId) + 1}` : ' · canvas');
+    $('elText').hidden = isP || isD;
+    $('textRows').hidden = isP || isD;
+    $('pictureRows').hidden = !(isP || isD);
+    $('picOnly').hidden = !isP;
+    $('drawOnly').hidden = !isD;
     $('bubbleOnly').hidden = !isB;
-    $('textBgRow').hidden = isB;
+    $('textBgRow').hidden = !isT;
     $('autoHRow').hidden = !isB;
-    $('rotLbl').hidden = isB;
-    $('elRot').hidden = isB;
-    $('elRotVal').hidden = isB;
+    $('fitRow').hidden = !(isT || isB);
+    $('shadowRow').hidden = !(isT || isB);
+    $('rotRow').hidden = isB;
+    $('elOpacity').value = el.opacity ?? 100;
+    $('elRot').value = Math.round(el.rot || 0);
+    $('elMargin').value = Math.round(el.margin ?? 30);
+    $('elPin').value = el.pin || 'auto';
+    $('elClip').checked = !!el.clip;
+  }
+  if (el && (el.type === 'text' || el.type === 'bubble')) {
+    const isB = el.type === 'bubble';
+    $('elText').value = el.text;
     if (isB) {
       $('bShape').value = el.shape;
       $('bFill').value = el.fill;
@@ -1364,10 +1516,6 @@ function syncProps() {
     $('elBg').value = el.bg;
     $('elBgOpacity').value = el.bgOpacity;
     $('elShadow').checked = !!el.shadow;
-    $('elRot').value = el.rot || 0;
-    $('elMargin').value = Math.round(el.margin ?? 30);
-    $('elPin').value = el.pin || 'auto';
-    $('elClip').checked = !!el.clip;
     $('elFit').checked = !!el.fit;
     setSeg('elAlign', el.align, {});
     setSeg('elStyleBtns', null, el);
@@ -1389,6 +1537,9 @@ function syncProps() {
     $('pOffX').value = Math.round((p.offX || 0) * 100);
     $('pOffY').value = Math.round((p.offY || 0) * 100);
     $('pFlipBtn').classList.toggle('active', !!p.flip);
+    $('pStraight').value = p.straight || 0;
+    $('pWeight').value = Math.round((p.weight || 1) * 100);
+    $('pWeightRow').hidden = state.layout.mode !== 'custom';
     $('pLeftBtn').disabled = idx <= 0;
     $('pRightBtn').disabled = idx >= state.panels.length - 1;
     $('pNumText').value = p.numText || '';
@@ -1416,17 +1567,24 @@ function syncProps() {
 function updateValueLabels() {
   const el = selEl();
   if (el) {
+    $('elOpacityVal').textContent = Math.round(el.opacity ?? 100) + '%';
+    $('elRotVal').textContent = Math.round(el.rot || 0) + '°';
+  }
+  if (el && (el.type === 'text' || el.type === 'bubble')) {
     $('elSizeVal').textContent = Math.round(el.size);
     $('elStrokeWVal').textContent = Math.round(el.strokeW);
     $('elBgOpacityVal').textContent = el.bgOpacity + '%';
-    $('elRotVal').textContent = (el.rot || 0) + '°';
     if (el.type === 'bubble') {
       $('bFillOpacityVal').textContent = el.fillOpacity + '%';
       $('bBorderWidthVal').textContent = Math.round(el.borderW);
     }
   }
   const p = selPanel();
-  if (p) $('pZoomVal').textContent = Math.round((p.zoom || 1) * 100) + '%';
+  if (p) {
+    $('pZoomVal').textContent = Math.round((p.zoom || 1) * 100) + '%';
+    $('pStraightVal').textContent = (p.straight || 0) + '°';
+    $('pWeightVal').textContent = Math.round((p.weight || 1) * 100) + '%';
+  }
   const L = state.layout;
   $('lGapVal').textContent = L.gap;
   $('lBgOpacityVal').textContent = (L.bgOpacity ?? 100) + '%';
@@ -1449,7 +1607,9 @@ function syncLayoutUI() {
   $('lWidth').value = L.width;
   $('lMode').value = L.mode;
   $('lAspect').value = L.aspect;
-  $('lAspect').disabled = L.mode === 'justified';
+  $('lAspect').disabled = L.mode !== 'uniform';
+  $('lCols').disabled = L.mode === 'custom';
+  renderRowsEditor();
   $('lFit').value = L.fit;
   $('lBg').value = L.bg;
   $('lBgOpacity').value = L.bgOpacity ?? 100;
@@ -1496,8 +1656,11 @@ const RESETS = {};      // input id -> () => default value for the input
 const SEG_RESETS = {};  // seg id -> () => void
 
 // ---------- bind element inputs ----------
-function rememberStyle(el) { lastStyle[el.type] = pickStyle(el); }
-function elDefaults(el) { return el.type === 'bubble' ? BUBBLE_DEFAULTS : TEXT_DEFAULTS; }
+function rememberStyle(el) {
+  if ((el.type !== 'text' && el.type !== 'bubble') || el.font === 'emoji') return;
+  lastStyle[el.type] = pickStyle(el);
+}
+function elDefaults(el) { return { bubble: BUBBLE_DEFAULTS, picture: PICTURE_DEFAULTS, draw: DRAW_DEFAULTS }[el.type] || TEXT_DEFAULTS; }
 function bindEl(id, key, conv) {
   const inp = $(id);
   const read = () => (inp.type === 'checkbox' ? inp.checked : conv ? conv(inp.value) : inp.value);
@@ -1526,6 +1689,7 @@ bindEl('elBg', 'bg');
 bindEl('elBgOpacity', 'bgOpacity', num);
 bindEl('elShadow', 'shadow');
 bindEl('elRot', 'rot', num);
+bindEl('elOpacity', 'opacity', num);
 bindEl('elMargin', 'margin', num);
 bindEl('elClip', 'clip');
 bindEl('bShape', 'shape');
@@ -1596,6 +1760,23 @@ $('elDupBtn').addEventListener('click', () => {
   addElement(copy);
 });
 $('elFrontBtn').addEventListener('click', () => moveElement(1));
+$('elTopBtn').addEventListener('click', () => moveElementTo(true));
+$('elBottomBtn').addEventListener('click', () => moveElementTo(false));
+function moveElementTo(front) {
+  const el = selEl(); if (!el) return;
+  state.elements = state.elements.filter(e => e !== el);
+  if (front) state.elements.push(el); else state.elements.unshift(el);
+  commit(); scheduleRender();
+  toast(front ? 'Moved to the front.' : 'Moved to the back.', 1500);
+}
+$('picFlipBtn').addEventListener('click', () => { const el = selEl(); if (!el || el.type !== 'picture') return; el.flip = !el.flip; commit(); scheduleRender(); });
+$('picReplaceBtn').addEventListener('click', () => $('picReplaceInput').click());
+$('picReplaceInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; e.target.value = '';
+  const el = selEl();
+  if (!file || !el || el.type !== 'picture') return;
+  try { el.imgId = await makeImageEntry(file, file.name); commit(); scheduleRender(); } catch (err) { toast('Could not read that picture.'); }
+});
 $('elBackBtn').addEventListener('click', () => moveElement(-1));
 function moveElement(dir) {
   const el = selEl(); if (!el) return;
@@ -1614,24 +1795,27 @@ function deleteSelectedElement() {
 
 // ---------- custom fonts ----------
 $('loadFontBtn').addEventListener('click', () => $('fontInput').click());
+async function registerFontRecord(r) {
+  if (FONTS.some(f => f.id === r.id)) return;
+  const fam = 'mememe-' + r.id;
+  const face = new FontFace(fam, await r.blob.arrayBuffer());
+  await face.load();
+  document.fonts.add(face);
+  FONTS.push({ id: r.id, label: '★ ' + r.name, family: `"${fam}", sans-serif` });
+}
 $('fontInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
   try {
-    const buf = await file.arrayBuffer();
-    customFontCount++;
-    const fam = `mememe-custom-${customFontCount}`;
-    const face = new FontFace(fam, buf);
-    await face.load();
-    document.fonts.add(face);
-    const id = 'custom-' + customFontCount;
-    FONTS.push({ id, label: '★ ' + file.name.replace(/\.[^.]+$/, ''), family: `"${fam}", sans-serif` });
+    const rec = { id: 'cf-' + uid(), name: file.name.replace(/\.[^.]+$/, ''), blob: file };
+    await registerFontRecord(rec);
+    if (projectsOK) await dbPut('fonts', rec).catch(() => {});
     populateFontSelects();
     const el = selEl();
-    if (el) { el.font = id; rememberStyle(el); commit(); }
+    if (el) { el.font = rec.id; rememberStyle(el); commit(); }
     syncProps(); syncLayoutUI(); scheduleRender();
-    toast(`Font “${file.name}” loaded for this session.`);
+    toast(`Font “${rec.name}” added` + (projectsOK ? ' — it stays available and is saved with your projects.' : ' for this session.'), 4000);
   } catch (err) {
     toast('That file could not be loaded as a font.');
   }
@@ -1657,6 +1841,16 @@ bindPanel('pZoom', 'zoom', v => Number(v) / 100, v => v * 100);
 bindPanel('pOffX', 'offX', v => Number(v) / 100, v => v * 100);
 bindPanel('pOffY', 'offY', v => Number(v) / 100, v => v * 100);
 bindPanel('pSpan', 'span', num);
+bindPanel('pStraight', 'straight', num);
+bindPanel('pWeight', 'weight', v => Number(v) / 100, v => v * 100);
+function rotatePanel(d) {
+  const p = selPanel(); if (!p) return;
+  p.rot = (((p.rot || 0) + d) % 360 + 360) % 360;
+  p.offX = 0; p.offY = 0;
+  commit(); syncProps(); scheduleRender();
+}
+$('pRotLBtn').addEventListener('click', () => rotatePanel(-90));
+$('pRotRBtn').addEventListener('click', () => rotatePanel(90));
 bindPanel('pNumText', 'numText');
 bindPanel('pNumHide', 'numHide');
 bindPanel('pNumOwn', 'numOwn');
@@ -1725,7 +1919,7 @@ function bindLayout(id, key, conv, sub) {
     const target = sub ? state.layout[sub] : state.layout;
     target[key] = inp.type === 'checkbox' ? inp.checked : conv ? conv(inp.value) : inp.value;
     if (key === 'font') ensureFont(target.font);
-    if (id === 'lMode') $('lAspect').disabled = state.layout.mode === 'justified';
+    if (id === 'lMode') { $('lAspect').disabled = state.layout.mode !== 'uniform'; $('lCols').disabled = state.layout.mode === 'custom'; renderRowsEditor(); }
     updateValueLabels();
     scheduleRender();
     if (inp.tagName === 'SELECT' || inp.type === 'checkbox') { commit(); syncProps(); }
@@ -1782,6 +1976,66 @@ $('cStyleBtns').addEventListener('click', (e) => {
 });
 SEG_RESETS.cAlign = () => { state.layout.cap.align = defaultLayout().cap.align; setSeg('cAlign', state.layout.cap.align, {}); };
 SEG_RESETS.cStyleBtns = () => { const d = defaultLayout().cap; ['bold', 'italic', 'upper'].forEach(k => { state.layout.cap[k] = d[k]; }); setSeg('cStyleBtns', null, state.layout.cap); };
+// ---------- custom comic rows ----------
+const ROW_PRESETS = [
+  ['1 · 4 · 1', [[1, 45], [4, 30], [1, 45]]], ['2 · 3 · 2', [[2, 40], [3, 32], [2, 40]]], ['1 · 2 · 2', [[1, 50], [2, 40], [2, 40]]],
+  ['2 · 1 · 2', [[2, 40], [1, 45], [2, 40]]], ['3 · 3 · 3', [[3, 32], [3, 32], [3, 32]]], ['Big + 2', [[1, 62], [2, 40]]], ['Strip of 4', [[4, 30]]]
+];
+ROW_PRESETS.forEach(([label, rows]) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = label;
+  b.title = 'Panels per row: ' + label;
+  b.addEventListener('click', () => {
+    state.layout.rows = rows.map(([n, h]) => ({ n, h }));
+    commit(); renderRowsEditor(); syncProps(); scheduleRender();
+  });
+  $('rowPresets').appendChild(b);
+});
+function renderRowsEditor() {
+  const L = state.layout;
+  $('rowsEditor').hidden = L.mode !== 'custom';
+  if (L.mode !== 'custom') return;
+  if (!L.rows || !L.rows.length) L.rows = defaultLayout().rows;
+  const list = $('rowsList');
+  list.innerHTML = '';
+  L.rows.forEach((r, i) => {
+    const d = document.createElement('div');
+    d.className = 'row-def';
+    const lb = document.createElement('span');
+    lb.className = 'rl';
+    lb.textContent = `Row ${i + 1}`;
+    const sl = document.createElement('select');
+    sl.title = 'Panels in this row';
+    for (let n = 1; n <= 6; n++) { const o = document.createElement('option'); o.value = n; o.textContent = `${n} panel${n > 1 ? 's' : ''}`; sl.appendChild(o); }
+    sl.value = r.n;
+    sl.addEventListener('input', () => { r.n = Number(sl.value); commit(); syncProps(); scheduleRender(); });
+    const rg = document.createElement('input');
+    rg.type = 'range'; rg.min = 10; rg.max = 150; rg.value = r.h;
+    rg.title = 'Row height (% of the page width)';
+    const val = document.createElement('span');
+    val.className = 'val';
+    val.textContent = r.h + '%';
+    rg.addEventListener('input', () => { r.h = Number(rg.value); val.textContent = r.h + '%'; scheduleRender(); });
+    rg.addEventListener('change', commit);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'icon small danger';
+    del.textContent = '✕';
+    del.title = 'Remove this row';
+    del.disabled = L.rows.length <= 1;
+    del.addEventListener('click', () => { L.rows.splice(i, 1); commit(); renderRowsEditor(); scheduleRender(); });
+    d.append(lb, sl, rg, val, del);
+    list.appendChild(d);
+  });
+}
+$('addRowBtn').addEventListener('click', () => {
+  const L = state.layout;
+  const last = L.rows[L.rows.length - 1] || { n: 2, h: 40 };
+  L.rows.push({ n: last.n, h: last.h });
+  commit(); renderRowsEditor(); scheduleRender();
+});
+
 $('presets').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-preset]');
   if (b) applyPreset(b.dataset.preset);
@@ -1872,30 +2126,57 @@ function snap(cx, cy, hw, hh) {
   return { cx, cy };
 }
 
+const pointers = new Map();
+let pinch = null, pinchLock = false, spaceDown = false;
+function startPinch() {
+  if (drag) { if (drag.moved && drag.mode !== 'view') restore(history[hIndex]); drag = null; guides = { x: null, y: null }; }
+  if (drawing) cancelDrawing();
+  const [a, b] = [...pointers.values()];
+  const r = canvas.getBoundingClientRect(), v = lastView;
+  const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: zoom.z, px: v.x + (mx - r.left) / r.width * v.w, py: v.y + (my - r.top) / r.height * v.h };
+}
+function movePinch() {
+  const [a, b] = [...pointers.values()];
+  const r = canvas.getBoundingClientRect();
+  const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  zoomTo(pinch.z0 * d / pinch.d0, pinch.px, pinch.py, ((a.x + b.x) / 2 - r.left) / r.width, ((a.y + b.y) / 2 - r.top) / r.height);
+}
+
 canvas.addEventListener('pointerdown', (e) => {
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  if (pointers.size === 2) { startPinch(); e.preventDefault(); return; }
+  if (pointers.size > 2 || pinchLock) return;
+  // move the zoomed view: middle mouse button, or Space + drag
+  if (e.button === 1 || (spaceDown && e.button === 0)) {
+    drag = { mode: 'view', sx: e.clientX, sy: e.clientY, cx: lastView.x + lastView.w / 2, cy: lastView.y + lastView.h / 2, moved: false };
+    e.preventDefault();
+    return;
+  }
   if (e.button !== undefined && e.button !== 0) return;
   const p = toCanvasPoint(e);
+  if (drawState.on) { startDrawing(p); e.preventDefault(); return; }
   const hit = hitTest(p);
   drag = null;
   const now = Date.now();
   if (!hit) { select(null); return; }
+  const copyScale = (el) => { const o = {}; SCALE_KEYS.forEach(k => { o[k] = el[k]; }); return o; };
   if (hit.kind === 'tail' || hit.kind === 'resize') {
-    drag = { mode: hit.kind, el: hit.el, start: p, moved: false };
+    drag = { mode: hit.kind, el: hit.el, start: p, moved: false, o: copyScale(hit.el), g0: Object.assign({}, geo.get(hit.el.id)) };
   } else if (hit.kind === 'el') {
     const el = hit.el;
     if (lastTap.id === el.id && now - lastTap.t < 380) {
       lastTap = { id: null, t: 0 };
       select({ kind: 'el', id: el.id });
-      $('elText').focus();
-      $('elText').select();
+      if (el.type === 'text' || el.type === 'bubble') { $('elText').focus(); $('elText').select(); }
+      else if (el.type === 'draw') setDrawMode(true, el.id);
       return;
     }
     lastTap = { id: el.id, t: now };
     if (!sel || sel.id !== el.id) select({ kind: 'el', id: el.id });
     const g = geo.get(el.id);
-    const o = {};
-    SCALE_KEYS.forEach(k => { o[k] = el[k]; });
-    drag = { mode: 'move', el, start: p, moved: false, g, ocx: g.cx, ocy: g.cy, ofr: g.frame, o, otip: el.type === 'bubble' ? { x: g.tipX, y: g.tipY } : null };
+    drag = { mode: 'move', el, start: p, moved: false, g, ocx: g.cx, ocy: g.cy, ofr: g.frame, o: copyScale(el), otip: el.type === 'bubble' ? { x: g.tipX, y: g.tipY } : null };
   } else if (hit.kind === 'panel') {
     const pnl = hit.cell.p;
     if (lastTap.id === pnl.id && now - lastTap.t < 380) {
@@ -1912,13 +2193,20 @@ canvas.addEventListener('pointerdown', (e) => {
       if (detailId) { detailId = pnl.id; updateDetailBar(); }
     }
   }
-  if (drag) {
-    canvas.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  }
+  if (drag) e.preventDefault();
 });
 canvas.addEventListener('pointermove', (e) => {
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch) { if (pointers.size >= 2) movePinch(); return; }
+  if (pinchLock) return;
+  if (drawing) { continueDrawing(toCanvasPoint(e)); return; }
   if (!drag) return;
+  if (drag.mode === 'view') {
+    const r = canvas.getBoundingClientRect(), k = lastView.w / r.width;
+    panViewTo(drag.cx - (e.clientX - drag.sx) * k, drag.cy - (e.clientY - drag.sy) * k);
+    drag.moved = true;
+    return;
+  }
   const p = toCanvasPoint(e);
   const dx = p.x - drag.start.x, dy = p.y - drag.start.y;
   if (!drag.moved && Math.hypot(dx, dy) < 3 * dispScale()) return;
@@ -1932,8 +2220,10 @@ canvas.addEventListener('pointermove', (e) => {
     const k = drag.ofr.w / to.w;
     SCALE_KEYS.forEach(key => { if (typeof drag.o[key] === 'number') el[key] = drag.o[key] * k; });
     el.panelId = to.canvas ? null : to.p.id;
-    el.x = (s.cx - to.x) / to.w;
-    el.y = (s.cy - to.y) / to.h;
+    // for drawings the origin may differ slightly from the box center
+    const ocxOff = el.type === 'draw' ? (drag.g.ox - drag.g.cx) : 0, ocyOff = el.type === 'draw' ? (drag.g.oy - drag.g.cy) : 0;
+    el.x = (s.cx + ocxOff - to.x) / to.w;
+    el.y = (s.cy + ocyOff - to.y) / to.h;
     if (drag.otip) {
       el.tx = (drag.otip.x + (s.cx - drag.ocx) - to.x) / to.w;
       el.ty = (drag.otip.y + (s.cy - drag.ocy) - to.y) / to.h;
@@ -1942,12 +2232,22 @@ canvas.addEventListener('pointermove', (e) => {
     const g = geo.get(el.id);
     const lp = localPoint(g, p);
     const fw = g.frame.w;
-    el.w = clamp(Math.abs(lp.x) * 2 / fw, 0.03, 4);
-    if (el.type === 'bubble') {
-      el.h = clamp(Math.abs(lp.y) * 2 / fw, 0.02, 4);
-      if (el.autoH) { el.autoH = false; $('bAutoH').checked = false; }
-    } else if (el.fit) {
-      el.h = clamp(Math.abs(lp.y) * 2 / fw, 0.02, 4);
+    if (el.type === 'picture') {
+      const a = g.w / g.h;
+      el.w = clamp(Math.max(Math.abs(lp.x) * 2, Math.abs(lp.y) * 2 * a) / fw, 0.02, 6);
+    } else if (el.type === 'draw') {
+      const g0 = drag.g0;
+      const f = Math.max(Math.abs(lp.x) / (g0.w / 2), Math.abs(lp.y) / (g0.h / 2));
+      el.s = clamp((drag.o.s || 1) * f, 0.05, 30);
+    } else {
+      el.w = clamp(Math.abs(lp.x) * 2 / fw, 0.03, 4);
+      if (el.type === 'text' && el.font === 'emoji') el.size = drag.o.size * el.w / drag.o.w; // emoji scale like stickers
+      if (el.type === 'bubble') {
+        el.h = clamp(Math.abs(lp.y) * 2 / fw, 0.02, 4);
+        if (el.autoH) { el.autoH = false; $('bAutoH').checked = false; }
+      } else if (el.fit) {
+        el.h = clamp(Math.abs(lp.y) * 2 / fw, 0.02, 4);
+      }
     }
   } else if (drag.mode === 'tail') {
     const fr = geo.get(el.id).frame;
@@ -1966,14 +2266,182 @@ canvas.addEventListener('pointermove', (e) => {
 });
 function endDrag() {
   if (!drag) return;
-  const moved = drag.moved;
+  const moved = drag.moved && drag.mode !== 'view';
   drag = null;
   guides = { x: null, y: null };
   if (moved) { commit(); syncProps(); }
   scheduleRender();
 }
-canvas.addEventListener('pointerup', endDrag);
-canvas.addEventListener('pointercancel', endDrag);
+function onPointerEnd(e) {
+  pointers.delete(e.pointerId);
+  if (pinch) { if (pointers.size < 2) { pinch = null; pinchLock = pointers.size > 0; } return; }
+  if (pinchLock) { if (pointers.size === 0) pinchLock = false; return; }
+  if (drawing) { finishDrawing(); return; }
+  endDrag();
+}
+canvas.addEventListener('pointerup', onPointerEnd);
+canvas.addEventListener('pointercancel', onPointerEnd);
+canvas.addEventListener('wheel', (e) => {
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    const p = toCanvasPoint(e);
+    zoomBy(Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0025)), p.x, p.y);
+  } else if (zoom.z > 1.01) {
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect(), k = lastView.w / r.width;
+    panViewTo(lastView.x + lastView.w / 2 + e.deltaX * k, lastView.y + lastView.h / 2 + e.deltaY * k);
+  }
+}, { passive: false });
+$('zoomIn').addEventListener('click', () => zoomBy(1.5));
+$('zoomOut').addEventListener('click', () => zoomBy(1 / 1.5));
+$('zoomFit').addEventListener('click', resetZoom);
+document.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (e.code === 'Space' && !(t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'BUTTON'))) {
+    if (!spaceDown) { spaceDown = true; canvas.classList.add('panning'); }
+    e.preventDefault();
+  }
+});
+document.addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceDown = false; canvas.classList.remove('panning'); } });
+
+// =====================================================================
+// Freehand drawing
+// =====================================================================
+const DRAW_COLORS = ['#111111', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa'];
+const drawState = Object.assign({ on: false, tool: 'pen', color: '#e53935', size: 8, alpha: 100, target: null }, settings.draw || {}, { on: false, target: null });
+let drawing = null;
+function saveDrawPrefs() { settings.draw = { tool: drawState.tool, color: drawState.color, size: drawState.size, alpha: drawState.alpha }; saveSettings(); }
+function setDrawMode(on, targetId) {
+  if (drawing) finishDrawing();
+  drawState.on = on;
+  drawState.target = on ? (targetId || null) : null;
+  if (on) sel = null;
+  $('drawBtn').classList.toggle('active', on);
+  canvas.classList.toggle('drawing', on);
+  syncDrawUI();
+  syncProps();
+  renderStrip();
+  scheduleRender();
+}
+function syncDrawUI() {
+  setSeg('drawTool', drawState.tool, {});
+  $('drawColor').value = drawState.color;
+  $('drawSize').value = drawState.size;
+  $('drawAlpha').value = drawState.alpha;
+  $('drawSizeVal').textContent = drawState.size;
+  $('drawAlphaVal').textContent = drawState.alpha + '%';
+}
+function localDrawPoint(el, fr, p) {
+  const k = fr.w * (el.s || 1);
+  const r = -(el.rot || 0) * Math.PI / 180;
+  const dx = p.x - (fr.x + el.x * fr.w), dy = p.y - (fr.y + el.y * fr.h);
+  return { x: (dx * Math.cos(r) - dy * Math.sin(r)) / k, y: (dx * Math.sin(r) + dy * Math.cos(r)) / k, k };
+}
+function startDrawing(p) {
+  if (!lastLayout) return;
+  if (drawState.tool === 'eraser') { drawing = { erase: true, changed: false }; eraseAt(p); return; }
+  const cell = cellAt(lastLayout, p.x, p.y);
+  const fr = cell || canvasFrame(lastLayout);
+  const pid = cell ? cell.p.id : null;
+  let el = drawState.target && findEl(drawState.target);
+  if (el && (el.type !== 'draw' || (el.panelId || null) !== pid)) el = null;
+  if (!el) {
+    el = Object.assign({ id: uid(), type: 'draw', panelId: pid, x: (p.x - fr.x) / fr.w, y: (p.y - fr.y) / fr.h, s: 1, strokes: [] }, JSON.parse(JSON.stringify(DRAW_DEFAULTS)));
+    state.elements.push(el);
+    drawState.target = el.id;
+  }
+  const efr = frameOf(el, lastLayout);
+  const k = efr.w * (el.s || 1);
+  const st = {
+    pts: [], color: drawState.color, kind: drawState.tool,
+    size: (drawState.size * (drawState.tool === 'marker' ? 2.2 : 1)) / 1000 * efr.w / k,
+    alpha: (drawState.tool === 'marker' ? 0.45 : 1) * drawState.alpha / 100
+  };
+  el.strokes.push(st);
+  drawing = { el, st };
+  addDrawPoint(p, true);
+}
+function addDrawPoint(p, force) {
+  const { el, st } = drawing;
+  const fr = frameOf(el, lastLayout);
+  const q = localDrawPoint(el, fr, p);
+  const n = st.pts.length;
+  if (!force && n >= 2 && Math.hypot(q.x - st.pts[n - 2], q.y - st.pts[n - 1]) * q.k < 1.5 * dispScale()) return;
+  st.pts.push(+q.x.toFixed(5), +q.y.toFixed(5));
+  scheduleRender();
+}
+function continueDrawing(p) { if (drawing.erase) eraseAt(p); else addDrawPoint(p); }
+function finishDrawing() {
+  const d = drawing;
+  drawing = null;
+  if (d.erase) { if (d.changed) commit(); return; }
+  recenterDraw(d.el);
+  commit();
+  scheduleRender();
+}
+function cancelDrawing() {
+  const d = drawing;
+  drawing = null;
+  if (!d || d.erase) return;
+  d.el.strokes.pop();
+  if (!d.el.strokes.length) { state.elements = state.elements.filter(e => e !== d.el); drawState.target = null; }
+  scheduleRender();
+}
+// Keep the drawing's origin in the middle of its strokes (for rotation / resizing).
+function recenterDraw(el) {
+  if (!lastLayout) return;
+  const fr = frameOf(el, lastLayout);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  el.strokes.forEach(st => { for (let i = 0; i < st.pts.length; i += 2) { x0 = Math.min(x0, st.pts[i]); x1 = Math.max(x1, st.pts[i]); y0 = Math.min(y0, st.pts[i + 1]); y1 = Math.max(y1, st.pts[i + 1]); } });
+  if (!isFinite(x0)) return;
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  el.strokes.forEach(st => { for (let i = 0; i < st.pts.length; i += 2) { st.pts[i] = +(st.pts[i] - mx).toFixed(5); st.pts[i + 1] = +(st.pts[i + 1] - my).toFixed(5); } });
+  const k = fr.w * (el.s || 1), r = (el.rot || 0) * Math.PI / 180;
+  el.x += (mx * Math.cos(r) - my * Math.sin(r)) * k / fr.w;
+  el.y += (mx * Math.sin(r) + my * Math.cos(r)) * k / fr.h;
+}
+function segDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  const t = l2 ? clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1) : 0;
+  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+}
+function strokeHit(st, x, y, r) {
+  const p = st.pts;
+  if (p.length === 2) return Math.hypot(p[0] - x, p[1] - y) <= r;
+  for (let i = 0; i < p.length - 2; i += 2) if (segDist(x, y, p[i], p[i + 1], p[i + 2], p[i + 3]) <= r) return true;
+  return false;
+}
+function eraseAt(p) {
+  const tol = 10 * dispScale();
+  for (let i = state.elements.length - 1; i >= 0; i--) {
+    const el = state.elements[i];
+    if (el.type !== 'draw') continue;
+    const fr = frameOf(el, lastLayout);
+    const q = localDrawPoint(el, fr, p);
+    const before = el.strokes.length;
+    el.strokes = el.strokes.filter(st => !strokeHit(st, q.x, q.y, st.size / 2 + tol / q.k));
+    if (el.strokes.length !== before) {
+      drawing.changed = true;
+      if (!el.strokes.length) { state.elements.splice(i, 1); geo.delete(el.id); if (drawState.target === el.id) drawState.target = null; }
+    }
+  }
+  scheduleRender();
+}
+$('drawBtn').addEventListener('click', () => setDrawMode(!drawState.on));
+$('drawDoneBtn').addEventListener('click', () => setDrawMode(false));
+$('drawMoreBtn').addEventListener('click', () => { const el = selEl(); if (el && el.type === 'draw') setDrawMode(true, el.id); });
+$('drawTool').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; drawState.tool = b.dataset.v; syncDrawUI(); saveDrawPrefs(); });
+$('drawColor').addEventListener('input', () => { drawState.color = $('drawColor').value; if (drawState.tool === 'eraser') drawState.tool = 'pen'; syncDrawUI(); saveDrawPrefs(); });
+$('drawSize').addEventListener('input', () => { drawState.size = Number($('drawSize').value); syncDrawUI(); saveDrawPrefs(); });
+$('drawAlpha').addEventListener('input', () => { drawState.alpha = Number($('drawAlpha').value); syncDrawUI(); saveDrawPrefs(); });
+DRAW_COLORS.forEach(c => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.style.background = c;
+  b.title = c;
+  b.addEventListener('click', () => { drawState.color = c; if (drawState.tool === 'eraser') drawState.tool = 'pen'; syncDrawUI(); saveDrawPrefs(); });
+  $('drawSwatches').appendChild(b);
+});
 window.addEventListener('resize', scheduleRender);
 
 // Click anywhere outside the canvas and the editing controls → deselect.
@@ -1991,11 +2459,13 @@ document.addEventListener('pointerdown', (e) => {
 function enterDetail(id) {
   if (!id) return;
   detailId = id;
+  resetZoom();
   select({ kind: 'panel', id });
   updateDetailBar();
 }
 function exitDetail() {
   detailId = null;
+  resetZoom();
   updateDetailBar();
   scheduleRender();
 }
@@ -2096,6 +2566,8 @@ document.addEventListener('keydown', (e) => {
   if (typing) return;
   if (e.key === 'Escape') {
     if (document.querySelector('.modal-bg.open')) { closeAllModals(); return; }
+    if (drawState.on) { setDrawMode(false); return; }
+    if (zoom.z > 1.01) { resetZoom(); return; }
     if (detailId) { exitDetail(); return; }
     select(null);
     return;
@@ -2187,6 +2659,101 @@ $('shareBtn').addEventListener('click', async () => {
   catch (e) { if (e && e.name !== 'AbortError') toast('Sharing failed — use Download instead.'); }
 });
 $('clearAllBtn').addEventListener('click', () => newProject());
+
+// =====================================================================
+// Stickers: emoji, built-in vector stickers, own pictures
+// =====================================================================
+const EMOJI = {
+  Faces: '😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎 🤓 🧐 😕 😟 🙁 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 ☠️ 💩 🤡 👹 👺 👻 👽 🤖',
+  Gestures: '👍 👎 👌 🤌 🤏 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ ✋ 🤚 🖐️ 🖖 👋 👏 🙌 👐 🤲 🙏 💪 🫡 🤦 🤷 🙈 🙉 🙊 👀 👁️ 👄 🧠',
+  Symbols: '❤️ 🧡 💛 💚 💙 💜 🖤 🤍 💔 💯 💢 💥 💫 💦 💨 💬 💭 🗯️ 💤 ✨ ⭐ 🌟 ⚡ 🔥 💧 ❗ ❓ ‼️ ⁉️ ✅ ❌ ⚠️ 🚫 🔞 🆗 🆒 🆕 🆘 ➡️ ⬅️ ⬆️ ⬇️ 🔴 🟢 🔵',
+  Animals: '🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐔 🐧 🐦 🦆 🦅 🦉 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐢 🐍 🦖 🐙 🦀 🐬 🐳 🦈 🐊 🐘 🦒 🦘',
+  Food: '🍕 🍔 🍟 🌭 🌮 🍿 🥨 🥐 🍩 🍪 🎂 🍰 🍫 🍬 🍭 🍦 🍉 🍌 🍎 🍓 🥑 🥦 🌶️ 🥕 🌽 🧀 🥚 🍳 🥓 ☕ 🍺 🍻 🥂 🍷 🍸 🧃',
+  Things: '🎉 🎊 🎈 🎁 🏆 🥇 ⚽ 🏀 🎮 🎲 🎯 🎸 🎤 🎧 📱 💻 ⌨️ 📷 💡 💰 💸 💎 🔑 🔒 🔨 🧨 💣 ⏰ ⌛ 📌 📎 ✏️ 📝 📚 🚀 🚗 🚲 ✈️ 🏠 🏥 🌍 🌈 ☀️ 🌙 ☁️ ⛈️ ❄️ ☃️ 🌊 🌵 🌲 🌸 🍀 👑 🎩 🕶️ 💉 💊 🩺'
+};
+function sunglassesSVG() {
+  const rows = ['1111111111111111', '0133111001331110', '0031111000311110', '0001111000011110'];
+  let r = '';
+  rows.forEach((row, y) => row.split('').forEach((ch, x) => {
+    if (ch !== '0') r += `<rect x="${x * 20}" y="${y * 20}" width="20" height="20" fill="${ch === '3' ? '#fff' : '#000'}"/>`;
+  }));
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="80" viewBox="0 0 320 80" shape-rendering="crispEdges">${r}</svg>`;
+}
+const STICKERS = [
+  ['Red arrow', '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200"><path d="M12 72 H262 V18 L388 100 L262 182 V128 H12 Z" fill="#e53935" stroke="#fff" stroke-width="10" stroke-linejoin="round"/></svg>'],
+  ['Red circle', '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="280" viewBox="0 0 400 280"><ellipse cx="200" cy="140" rx="180" ry="120" fill="none" stroke="#e53935" stroke-width="16"/></svg>'],
+  ['Pixel sunglasses', null],
+  ['Laser eye', '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400"><defs><radialGradient id="g"><stop offset="0" stop-color="#fff"/><stop offset=".12" stop-color="#fff"/><stop offset=".25" stop-color="#ff4d4d"/><stop offset=".55" stop-color="#ff0000" stop-opacity=".45"/><stop offset="1" stop-color="#ff0000" stop-opacity="0"/></radialGradient></defs><circle cx="200" cy="200" r="200" fill="url(#g)"/><path d="M0 200 Q200 186 400 200 Q200 214 0 200Z" fill="#fff" opacity=".85"/><path d="M200 40 Q208 200 200 360 Q192 200 200 40Z" fill="#fff" opacity=".6"/></svg>'],
+  ['Censor bar', '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="90" viewBox="0 0 400 90"><rect x="0" y="0" width="400" height="90" fill="#000"/></svg>'],
+  ['Heart', '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="270" viewBox="0 0 300 270"><path d="M150 262 C60 190 8 140 8 82 C8 38 42 8 84 8 C112 8 136 24 150 48 C164 24 188 8 216 8 C258 8 292 38 292 82 C292 140 240 190 150 262Z" fill="#e53935" stroke="#fff" stroke-width="10"/></svg>'],
+  ['Crown', '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="220" viewBox="0 0 320 220"><path d="M20 70 L90 130 L160 20 L230 130 L300 70 L270 200 H50 Z" fill="#fbc02d" stroke="#8d6e00" stroke-width="10" stroke-linejoin="round"/><circle cx="160" cy="20" r="14" fill="#e53935"/><circle cx="20" cy="70" r="12" fill="#1e88e5"/><circle cx="300" cy="70" r="12" fill="#1e88e5"/></svg>'],
+  ['Star burst', null]
+];
+function burstSVG() {
+  let pts = '';
+  for (let i = 0; i < 28; i++) { const a = i / 28 * Math.PI * 2, r = i % 2 ? 120 : 190; pts += `${(200 + Math.cos(a) * r).toFixed(1)},${(200 + Math.sin(a) * r * 0.8).toFixed(1)} `; }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="330" viewBox="0 35 400 330"><polygon points="${pts}" fill="#ffeb3b" stroke="#e53935" stroke-width="10" stroke-linejoin="round"/></svg>`;
+}
+STICKERS[2][1] = sunglassesSVG();
+STICKERS[7][1] = burstSVG();
+
+function newPicture(imgId, over) {
+  const fr = insertionFrame();
+  return Object.assign({ id: uid(), type: 'picture', imgId, panelId: fr.canvas ? null : fr.p.id, x: 0.5, y: 0.5, w: 0.4 },
+    JSON.parse(JSON.stringify(PICTURE_DEFAULTS)), over);
+}
+async function addPictureBlob(blob, name, w) {
+  try {
+    const imgId = await makeImageEntry(blob, name);
+    addElement(newPicture(imgId, { w: w || 0.4 }));
+    closeModal('stickerModal');
+  } catch (err) { toast('Could not read that picture.'); }
+}
+(function buildStickerModal() {
+  const eg = $('emojiGrid');
+  Object.entries(EMOJI).forEach(([cat, list]) => {
+    const h = document.createElement('div');
+    h.className = 'ecat';
+    h.textContent = cat;
+    eg.appendChild(h);
+    list.split(' ').filter(Boolean).forEach(em => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = em;
+      b.addEventListener('click', () => {
+        addElement(newText({ text: em, font: 'emoji', size: 220, w: 0.45, strokeW: 0, stroke: '#ffffff', upper: false, bold: false, italic: false, bgOn: false, shadow: false, color: '#000000', fit: false }));
+        closeModal('stickerModal');
+      });
+      eg.appendChild(b);
+    });
+  });
+  const sg = $('stickerGrid');
+  STICKERS.forEach(([name, svg]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    const img = document.createElement('img');
+    img.alt = '';
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    const sp = document.createElement('span');
+    sp.textContent = name;
+    b.append(img, sp);
+    b.addEventListener('click', () => addPictureBlob(new Blob([svg], { type: 'image/svg+xml' }), name, 0.35));
+    sg.appendChild(b);
+  });
+})();
+$('addStickerBtn').addEventListener('click', () => openModal('stickerModal'));
+$('stickerTabs').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-tab]'); if (!b) return;
+  $('stickerTabs').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+  $('tabEmoji').hidden = b.dataset.tab !== 'emoji';
+  $('tabStickers').hidden = b.dataset.tab !== 'stickers';
+  $('tabPicture').hidden = b.dataset.tab !== 'picture';
+});
+$('pictureFileBtn').addEventListener('click', () => $('pictureInput').click());
+$('pictureInput').addEventListener('change', (e) => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (f) addPictureBlob(f, f.name);
+});
 
 // =====================================================================
 // Templates & free images
@@ -2475,11 +3042,12 @@ function openDB() {
   if (!dbPromise) {
     dbPromise = new Promise((res, rej) => {
       if (!window.indexedDB) { rej(new Error('IndexedDB unavailable')); return; }
-      const r = indexedDB.open(DB_NAME, 1);
+      const r = indexedDB.open(DB_NAME, 2);
       r.onupgradeneeded = () => {
         const d = r.result;
         if (!d.objectStoreNames.contains('projects')) d.createObjectStore('projects', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('images')) d.createObjectStore('images', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('fonts')) d.createObjectStore('fonts', { keyPath: 'id' });
       };
       r.onsuccess = () => res(r.result);
       r.onerror = () => rej(r.error);
@@ -2537,7 +3105,10 @@ async function makeThumb() {
   fc.drawImage(cv, 0, 0);
   return new Promise(res => flat.toBlob(res, 'image/jpeg', 0.75));
 }
-function usedImageIds() { return Array.from(new Set(state.panels.filter(p => p.imgId).map(p => p.imgId))); }
+function idsOfState(st) {
+  return Array.from(new Set([].concat((st.panels || []).filter(p => p.imgId).map(p => p.imgId), (st.elements || []).filter(e => e.imgId).map(e => e.imgId))));
+}
+function usedImageIds() { return idsOfState(state); }
 async function saveNow() {
   clearTimeout(saveTimer);
   if (!projectsOK || !saveDirty) return;
@@ -2653,6 +3224,10 @@ async function initProjects() {
     await openDB();
     savedImgs = new Set(await dbKeys('images'));
     projectsOK = true;
+    // custom fonts are a library shared by all projects
+    for (const r of await dbAll('fonts')) { try { await registerFontRecord(r); } catch (e) { /* broken font file */ } }
+    populateFontSelects();
+    syncLayoutUI();
   } catch (e) {
     projectsOK = false;
     updateSaveStatus();
@@ -2855,7 +3430,17 @@ async function exportProject(id) {
     files.push({ name: file, data: new Uint8Array(await r.blob.arrayBuffer()) });
     meta.push({ id: imgId, file, type: r.blob.type, name: r.name, credit: r.credit, w: r.w, h: r.h });
   }
-  const json = { app: 'mememe', format: 1, appVersion: APP_VERSION, name: rec.name, created: rec.created, updated: rec.updated, state: JSON.parse(rec.state), images: meta };
+  const st = JSON.parse(rec.state);
+  const fontIds = new Set([st.layout && st.layout.cap && st.layout.cap.font, st.layout && st.layout.num && st.layout.num.font].concat((st.elements || []).map(e => e.font)).filter(f => f && f.startsWith('cf-')));
+  const fonts = [];
+  for (const fid of fontIds) {
+    const f = await dbGet('fonts', fid);
+    if (!f) continue;
+    const file = `fonts/${fid}.font`;
+    files.push({ name: file, data: new Uint8Array(await f.blob.arrayBuffer()) });
+    fonts.push({ id: fid, name: f.name, file });
+  }
+  const json = { app: 'mememe', format: 1, appVersion: APP_VERSION, name: rec.name, created: rec.created, updated: rec.updated, state: st, images: meta, fonts };
   files.unshift({ name: 'project.json', data: new TextEncoder().encode(JSON.stringify(json)) });
   const blob = zipStore(files);
   const safe = rec.name.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'project';
@@ -2882,11 +3467,17 @@ async function importProjectFile(file) {
       recs.push({ id: m.id, blob: new Blob([data], { type: m.type || 'application/octet-stream' }), name: m.name || 'image', credit: m.credit || '', w: m.w, h: m.h });
     });
     if (recs.length) { await dbPut('images', recs); recs.forEach(r => savedImgs.add(r.id)); }
+    for (const f of json.fonts || []) {
+      if (!files[f.file] || FONTS.some(x => x.id === f.id)) continue;
+      const fr = { id: f.id, name: f.name || 'Font', blob: new Blob([files[f.file]]) };
+      try { await registerFontRecord(fr); await dbPut('fonts', fr); } catch (e) { /* skip broken font */ }
+    }
+    populateFontSelects();
     const existing = await dbAll('projects');
     let name = json.name || file.name.replace(/\.[^.]+$/, '');
     if (existing.some(p => p.name === name)) name += ' (imported)';
     const st = json.state;
-    const ids = Array.from(new Set((st.panels || []).filter(p => p.imgId).map(p => p.imgId)));
+    const ids = idsOfState(st);
     const rec = { id: uid(), name, created: json.created || Date.now(), updated: Date.now(), state: JSON.stringify(st), imageIds: ids, count: (st.panels || []).length, thumb: null };
     await dbPut('projects', rec);
     closeModal('projModal');
@@ -2977,7 +3568,9 @@ $('setSide').value = settings.side;
 $('setSnap').checked = !!settings.snap;
 $('setDownscale').checked = !!settings.downscale;
 setupResetLabels();
+syncDrawUI();
 ensureUsedFonts();
+ensureFont('emoji');
 ensureFont('anton');
 ensureFont('comic');
 if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', scheduleRender);

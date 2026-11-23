@@ -70,8 +70,10 @@
     <span class="tool-sep"></span>
     <button type="button" class="tool wide" id="addTextBtn" title="Add a text box to the selected image (or the whole canvas)">+ Text</button>
     <button type="button" class="tool wide" id="addBubbleBtn" title="Add a speech bubble to the selected image (or the whole canvas)">+ Bubble</button>
+    <button type="button" class="tool wide" id="addStickerBtn" title="Add an emoji, a sticker or your own picture (PNG, JPG, SVG, GIF, …)">+ Sticker</button>
     <button type="button" class="tool wide" id="topBottomBtn" title="Add the classic meme text pair at the top and bottom">Top/Bottom</button>
     <span class="tool-sep"></span>
+    <button type="button" class="tool" id="drawBtn" title="Draw freehand (pen, marker, eraser). Two fingers / Ctrl+wheel to zoom.">✏️</button>
     <button type="button" class="tool" id="detailBtn" title="Detail view: zoom into the selected image (or double-tap an image)">🔍</button>
     <button type="button" class="tool" id="pinBtn" title="Pin the canvas to the top while scrolling the settings">📌</button>
   </div>
@@ -83,6 +85,11 @@
   </div>
   <div class="stage" id="stage">
     <canvas id="canvas" width="1080" height="1080"></canvas>
+    <div class="zoom-ctl" id="zoomCtl">
+      <button type="button" id="zoomOut" title="Zoom out">−</button>
+      <button type="button" id="zoomFit" title="Show everything (reset zoom)">1×</button>
+      <button type="button" id="zoomIn" title="Zoom in (also: two fingers, Ctrl+wheel). Move around: two fingers, wheel, or Space/middle mouse + drag">+</button>
+    </div>
   </div>
   <p class="stage-hint" id="stageHint">Tap a text or bubble to edit it, drag to move. Tap an image to select it — drag inside a selected image to move its crop, double-tap it for the detail view.</p>
 </section>
@@ -93,13 +100,47 @@
 <div class="card" id="propsCard">
   <div id="propsEmpty" class="muted">Nothing selected. Add images, text or bubbles — then tap something on the canvas to edit it.</div>
 
-  <!-- Element (text / bubble) properties -->
+  <!-- Drawing tools -->
+  <div id="propsDraw" hidden>
+    <div class="card-head">
+      <span class="label-main">✏️ Drawing</span>
+      <button type="button" class="btn small" id="drawDoneBtn" title="Stop drawing">Done</button>
+    </div>
+    <div class="row">
+      <label class="lbl">Tool</label>
+      <div class="seg-mini" id="drawTool">
+        <button type="button" data-v="pen" title="Pen">🖊 Pen</button>
+        <button type="button" data-v="marker" title="Marker — translucent, flat ends">🖍 Marker</button>
+        <button type="button" data-v="eraser" title="Eraser — removes whole strokes you touch">🧽 Eraser</button>
+      </div>
+    </div>
+    <div class="row">
+      <label class="lbl">Color</label>
+      <input type="color" id="drawColor" title="Stroke color">
+      <div class="swatches" id="drawSwatches"></div>
+    </div>
+    <div class="row">
+      <label class="lbl">Size</label>
+      <input type="range" id="drawSize" min="1" max="80" title="Stroke width (relative to the image)">
+      <span class="val" id="drawSizeVal"></span>
+    </div>
+    <div class="row">
+      <label class="lbl">Opacity</label>
+      <input type="range" id="drawAlpha" min="5" max="100" title="Stroke opacity">
+      <span class="val" id="drawAlphaVal"></span>
+    </div>
+    <p class="muted small-txt">Draw with one finger / the mouse. Zoom: two fingers, Ctrl+wheel or the + / − buttons. Move around: two fingers, wheel, or Space + drag. Each image gets its own drawing; undo removes the last stroke.</p>
+  </div>
+
+  <!-- Element (text / bubble / picture / drawing) properties -->
   <div id="propsElement" hidden>
     <div class="card-head">
       <span class="label-main" id="elTitle">Text</span>
       <div class="head-btns">
-        <button type="button" class="icon small" id="elBackBtn" title="Send backward">⤓</button>
-        <button type="button" class="icon small" id="elFrontBtn" title="Bring forward">⤒</button>
+        <button type="button" class="icon small" id="elBottomBtn" title="Send to back (behind all other elements)">⇊</button>
+        <button type="button" class="icon small" id="elBackBtn" title="Send backward (one step)">⤓</button>
+        <button type="button" class="icon small" id="elFrontBtn" title="Bring forward (one step)">⤒</button>
+        <button type="button" class="icon small" id="elTopBtn" title="Bring to front (above all other elements)">⇈</button>
         <button type="button" class="icon small" id="elDupBtn" title="Duplicate">⧉</button>
         <button type="button" class="icon small danger" id="elDelBtn" title="Delete (Del)">🗑</button>
       </div>
@@ -137,6 +178,7 @@
       </div>
     </div>
 
+    <div id="textRows">
     <div class="row">
       <label class="lbl">Font</label>
       <select id="elFont" title="Font"></select>
@@ -168,6 +210,30 @@
       <input type="range" id="elStrokeW" min="0" max="30" title="Outline width (0 = none)">
       <span class="val" id="elStrokeWVal"></span>
     </div>
+    </div>
+
+    <div id="pictureRows">
+      <div class="row" id="picOnly">
+        <label class="lbl">Picture</label>
+        <button type="button" class="btn small secondary" id="picFlipBtn" title="Mirror horizontally">⇋ Mirror</button>
+        <button type="button" class="btn small secondary" id="picReplaceBtn" title="Use another picture file">⇄ Replace</button>
+        <input type="file" id="picReplaceInput" accept="image/*,.svg">
+      </div>
+      <div class="row" id="drawOnly">
+        <label class="lbl">Drawing</label>
+        <button type="button" class="btn small secondary" id="drawMoreBtn" title="Continue drawing on this drawing">✏️ Draw more</button>
+      </div>
+    </div>
+    <div class="row">
+      <label class="lbl">Opacity</label>
+      <input type="range" id="elOpacity" min="0" max="100" title="Opacity of the whole element">
+      <span class="val" id="elOpacityVal"></span>
+    </div>
+    <div class="row" id="rotRow">
+      <label class="lbl">Rotate</label>
+      <input type="range" id="elRot" min="-180" max="180" title="Rotation in degrees">
+      <span class="val" id="elRotVal"></span>
+    </div>
 
     <details class="adv" id="elAdv">
       <summary>More options</summary>
@@ -195,7 +261,7 @@
         <input type="checkbox" id="elClip" title="Cut off everything that sticks out of its image">
         <span class="muted small-txt">Cut off at the image edge</span>
       </div>
-      <div class="row">
+      <div class="row" id="fitRow">
         <label class="lbl">Auto-fit</label>
         <input type="checkbox" id="elFit" title="Shrink the text so it fits into its box. For texts the box gets a fixed height (drag the corner handle).">
         <span class="muted small-txt">Shrink text to fit its box</span>
@@ -211,12 +277,9 @@
         <input type="range" id="elBgOpacity" min="0" max="100" title="Box opacity">
         <span class="val" id="elBgOpacityVal"></span>
       </div>
-      <div class="row">
+      <div class="row" id="shadowRow">
         <label class="lbl">Shadow</label>
         <input type="checkbox" id="elShadow" title="Soft drop shadow">
-        <label class="lbl short" id="rotLbl">Rotate</label>
-        <input type="range" id="elRot" min="-45" max="45" title="Rotation in degrees">
-        <span class="val" id="elRotVal"></span>
       </div>
     </details>
   </div>
@@ -252,6 +315,8 @@
           <option value="contain">Fit (letterbox)</option>
           <option value="stretch">Stretch</option>
         </select>
+        <button type="button" class="icon small" id="pRotLBtn" title="Rotate 90° to the left">⟲</button>
+        <button type="button" class="icon small" id="pRotRBtn" title="Rotate 90° to the right">⟳</button>
         <button type="button" class="icon small" id="pFlipBtn" title="Mirror horizontally">⇋</button>
       </div>
     </div>
@@ -269,6 +334,16 @@
           <label class="lbl short">Y</label>
           <input type="range" id="pOffY" min="-100" max="100" title="Vertical crop position">
         </div>
+        <div class="row">
+          <label class="lbl">Straighten</label>
+          <input type="range" id="pStraight" min="-45" max="45" step="0.5" title="Fine rotation, e.g. to straighten a tilted photo">
+          <span class="val" id="pStraightVal"></span>
+        </div>
+      </div>
+      <div class="row" id="pWeightRow">
+        <label class="lbl">Width share</label>
+        <input type="range" id="pWeight" min="25" max="300" step="5" title="Share of the row width (custom comic rows)">
+        <span class="val" id="pWeightVal"></span>
       </div>
       <div class="row" id="pSpanRow">
         <label class="lbl">Width</label>
@@ -329,6 +404,7 @@
     <select id="lMode" title="Same size: every image gets the same cell. Mosaic: images keep their ratios.">
       <option value="uniform">Same size</option>
       <option value="justified">Original ratios (mosaic)</option>
+      <option value="custom">Comic rows (custom)</option>
     </select>
     <select id="lAspect" title="Shape of the cells">
       <option value="first">Like 1st image</option>
@@ -338,6 +414,12 @@
       <option value="1.7778">16:9</option>
       <option value="0.5625">9:16</option>
     </select>
+  </div>
+  <div id="rowsEditor" hidden>
+    <div class="chips" id="rowPresets" title="Ready-made comic page layouts (panels per row)"></div>
+    <div id="rowsList"></div>
+    <button type="button" class="btn small secondary add-row" id="addRowBtn" title="Add another row">＋ Row</button>
+    <p class="muted small-txt">Panels fill the rows in order; extra panels repeat the last row. Each panel's width share is under its More options.</p>
   </div>
   <div class="row">
     <label class="lbl">Fit</label>
@@ -555,6 +637,30 @@
       <p class="muted small-txt">Works only if that site allows other web apps to use its images (CORS).</p>
     </details>
     <button class="close" data-close="tplModal">Close</button>
+  </div>
+</div>
+
+<!-- ---------- Sticker modal ---------- -->
+<div class="modal-bg" id="stickerModal">
+  <div class="modal wide">
+    <h2>Add a sticker</h2>
+    <div class="segment" id="stickerTabs">
+      <button type="button" class="active" data-tab="emoji">😀 Emoji</button>
+      <button type="button" data-tab="stickers">✨ Stickers</button>
+      <button type="button" data-tab="picture">🖼 Your picture</button>
+    </div>
+    <div id="tabEmoji" class="sticker-tab">
+      <div class="emoji-grid" id="emojiGrid"></div>
+    </div>
+    <div id="tabStickers" class="sticker-tab" hidden>
+      <div class="sticker-grid" id="stickerGrid"></div>
+    </div>
+    <div id="tabPicture" class="sticker-tab" hidden>
+      <p class="muted">Put any picture on top of your images — icons, logos, cut-outs (PNG / WebP with transparency), SVG, JPG, GIF (first frame). Size, rotation and opacity can be changed afterwards.</p>
+      <button type="button" class="btn" id="pictureFileBtn">Choose picture…</button>
+      <input type="file" id="pictureInput" accept="image/*,.svg">
+    </div>
+    <button class="close" data-close="stickerModal">Close</button>
   </div>
 </div>
 

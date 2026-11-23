@@ -12,18 +12,18 @@ A privacy-friendly web app for making memes, image grids, mosaics, comic pages a
 - Add one or many images by tapping, drag & drop (onto the drop zone or the canvas) or pasting from the clipboard
 - **Blank panels** — plain colored panels (color picker + color code) for text next to an image, e.g. the classic two-column "no / yes" meme
 - Panel strip with thumbnails: tap to select, **drag & drop to reorder** (long-press first on touch screens)
-- Per panel: caption / subtitle, fit (fill & crop, letterbox, stretch), mirror, move earlier/later, replace image, remove; under *More options*: zoom, crop position (or drag inside the selected image), column span, own number label / colors / hide badge
+- Per panel: caption, fit (fill & crop, letterbox, stretch), **rotate 90°** (⟲ ⟳), mirror, move earlier/later, replace image, remove (also with Del); under *More options*: zoom, crop position (or drag inside the selected image), **straighten** (−45° … 45°), column span / width share, own number label / colors / hide badge
 - Very large photos are downscaled to 4096 px on import to save memory (can be turned off in Settings)
 
 ### Layout
 - **Presets:** Classic meme, Caption on top, Two columns, Grid, Mosaic, Comic page, Storyline
 - Columns: auto or 1–6
-- **Same size cells** (ratio like the first image, 1:1, 4:3, 3:4, 16:9 or 9:16) or **Original ratios (mosaic)**; in same-size mode a panel can span several columns
+- **Same size cells** (ratio like the first image, 1:1, 4:3, 3:4, 16:9 or 9:16), **Original ratios (mosaic)** or **Comic rows (custom)** — rows with their own panel count and height, ready-made page layouts (1·4·1, 2·3·2, Big + 2, …) and a width share per panel; in same-size mode a panel can span several columns
 - **Resolution:** 720 – 4096 px wide, like the first image, or **all images at original size** — the width is chosen so no image loses pixels. Results above the browser limit (≈16 MP on phones, ≈40 MP on desktop) are scaled down evenly; the result size is shown above the download button
 - Background color and opacity (transparent backgrounds for PNG / WebP; JPG gets white) for letterboxed images and empty areas
 
 ### Frame & spacing
-- Lines **between the images** and an **outer frame**, each with its own color and width
+- Lines **between the images** and an **outer frame**, each with its own color and width; the empty rest of an unfinished row is filled with the line color
 - *More options:* an edge drawn on every image (comic look) and rounded corners
 
 ### Numbering
@@ -46,12 +46,28 @@ A privacy-friendly web app for making memes, image grids, mosaics, comic pages a
 - Bubble shapes: speech (oval), speech (rounded box), thought (cloud — one continuous outline), shout (spiky), whisper (dashed), caption box (narration); fill color & opacity, border, tail with draggable tip, auto height or free size
 - New texts / bubbles reuse the style of the last edited one
 
+### Stickers, emoji & pictures
+- **+ Sticker** opens three tabs: ~400 **emoji** (they scale like stickers; an outline gives them a sticker edge), **built-in vector stickers** (red arrow, red circle, pixel “deal with it” sunglasses, laser eye, censor bar, heart, crown, star burst) and **your own picture** — icons, logos, cut-outs, PNG / JPG / WebP / SVG / GIF (first frame)
+- Pictures can be resized (keeps the ratio), rotated, mirrored, replaced and faded (opacity), and belong to the image they sit on like texts
+
+### Freehand drawing
+- ✏️ switches to drawing: **pen**, translucent **marker** and a stroke **eraser**, 8 quick colors + color picker, size and opacity
+- Every image gets its own drawing; afterwards it behaves like any element (move, resize, rotate, opacity, layer order) and can be continued with “Draw more” or a double-tap
+- Undo removes the last stroke
+
+### Zoom & view
+- Pinch with two fingers, Ctrl + wheel (or trackpad pinch) or the **+ / − / 1×** buttons on the canvas; move the zoomed view with two fingers, the mouse wheel, **Space + drag** or the middle mouse button
+- Works in the overview and in the detail view; Esc / 1× resets
+
+### Layer order & opacity
+- Every element has an **opacity**; ⇊ ⤓ ⤒ ⇈ send it to the back, one step back, one step forward or to the front
+
 ### Detail view
 - Double-tap an image (or press 🔍) to zoom into it and place elements precisely; ◀ ▶ steps through the images, ✕ / Esc / double-tap returns to the overview
 
 ### Fonts
 - Bundled (offline, SIL OFL): Anton (Impact-style), Comic Relief, Archivo Black, Montserrat, Bitter, Anonymous Pro — plus system Impact, system sans and handwriting fallbacks
-- Load your own font file (.ttf / .otf / .woff / .woff2) with the **＋** button next to the font menu (kept for the current session)
+- Load your own font file (.ttf / .otf / .woff / .woff2) with the **＋** button next to the font menu — it is stored in the browser and available in all projects; exported `.mememe` files include the fonts they use
 
 ### Templates & free images (optional, third party)
 - **Imgflip** (top 100 popular memes) and **Memegen.link** (~200 classic memes) — loaded as a list, filterable
@@ -65,7 +81,6 @@ A privacy-friendly web app for making memes, image grids, mosaics, comic pages a
 - **📁 Projects** (next to “Blank panel” and in the menu): open, rename, duplicate, export, delete, start a new project, see the storage used
 - **Export / import** as `.mememe` files — a plain, uncompressed ZIP with `project.json` and the images — for backups or to continue on another device; `.mememe` files can also be dropped onto the app
 - *Settings → Delete all projects…* removes everything (double confirmation)
-- Custom font files are not stored in projects; texts using them fall back to Anton until the font is loaded again
 
 ### Editing & export
 - Undo / redo (40 steps), keyboard shortcuts: Ctrl/Cmd+Z, Ctrl/Cmd+Y or Shift+Ctrl/Cmd+Z, Delete (selected text, bubble, image or blank panel), arrow keys (Shift = 10 px), Esc
@@ -87,15 +102,17 @@ A privacy-friendly web app for making memes, image grids, mosaics, comic pages a
 
 Everything is drawn onto a `<canvas>`. The layout engine computes the panel rectangles (same-size grid with column spans, or justified rows for the mosaic), adds caption bars where needed, then draws the outer frame, the lines between images, panels, captions, number badges, texts and bubbles in that order.
 
-Each text / bubble stores the id of the image it belongs to; its position is a fraction of that image's width / height and its sizes are relative to the image width. When it is dragged onto another image (or attached to the canvas), its values are converted so it looks exactly the same in the new frame.
+Each text / bubble / picture / drawing stores the id of the image it belongs to; its position is a fraction of that image's width / height and its sizes are relative to the image width. When it is dragged onto another image (or attached to the canvas), its values are converted so it looks exactly the same in the new frame.
 
-The on-screen canvas shows a "view" of the composition: the whole result or, in the detail view, one image plus a small margin. On phones it renders only at screen resolution for speed; exports always render the full composition at full size on a separate canvas without selection handles.
+The on-screen canvas shows a "view" of the composition: the whole result or, in the detail view, one image plus a small margin — optionally zoomed in. On phones it renders only at screen resolution for speed; exports always render the full composition at full size on a separate canvas without selection handles.
 
 Speech bubbles are drawn on two small scratch canvases: one for the fill (applied with the fill opacity as a whole, so overlapping parts like body + tail never get darker) and one for the border (stroked at double width, interior punched out) — one seamless outline around body + tail.
 
+Freehand strokes are stored as point lists relative to the drawing's center (in units of the image width), so they scale and rotate with the drawing and are smoothed with quadratic curves when drawn. Image rotation combines 90° steps with a fine angle; the fill / fit scale is computed for the rotated bounding box.
+
 Decoded images are kept outside the serializable state, so undo/redo only snapshots a small JSON description of the composition.
 
-Projects live in IndexedDB in two stores: `projects` (name, dates, the JSON state, the ids of the images used, a small JPEG thumbnail) and `images` (one record per image with its blob, shared between duplicated projects). Images that no project references anymore are removed automatically. The `.mememe` export is a stored ZIP built by a small built-in writer (CRC-32 + headers); the importer also accepts deflate-compressed ZIPs via `DecompressionStream`.
+Projects live in IndexedDB in three stores — `fonts` (custom font files) plus `projects` (name, dates, the JSON state, the ids of the images used, a small JPEG thumbnail) and `images` (one record per image with its blob, shared between duplicated projects). Images that no project references anymore are removed automatically. The `.mememe` export is a stored ZIP built by a small built-in writer (CRC-32 + headers); the importer also accepts deflate-compressed ZIPs via `DecompressionStream`.
 
 ## Files
 
