@@ -3,7 +3,7 @@
  * Client-side meme / grid / comic composer. Everything is drawn on a <canvas>;
  * nothing is uploaded. */
 
-const APP_VERSION = '0.2.1';
+const APP_VERSION = '0.3.0';
 const $ = (id) => document.getElementById(id);
 const isCoarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
 
@@ -136,6 +136,7 @@ function commit() {
   if (history.length > H_MAX) history.shift();
   hIndex = history.length - 1;
   updateUndoButtons();
+  scheduleSave();
 }
 function restore(s) {
   const o = JSON.parse(s);
@@ -145,8 +146,8 @@ function restore(s) {
   ensureUsedFonts();
   syncAll();
 }
-function undo() { if (hIndex > 0) { hIndex--; restore(history[hIndex]); updateUndoButtons(); } }
-function redo() { if (hIndex < history.length - 1) { hIndex++; restore(history[hIndex]); updateUndoButtons(); } }
+function undo() { if (hIndex > 0) { hIndex--; restore(history[hIndex]); updateUndoButtons(); scheduleSave(); } }
+function redo() { if (hIndex < history.length - 1) { hIndex++; restore(history[hIndex]); updateUndoButtons(); scheduleSave(); } }
 function updateUndoButtons() {
   $('undoBtn').disabled = hIndex <= 0;
   $('redoBtn').disabled = hIndex >= history.length - 1;
@@ -478,7 +479,7 @@ function renderTo(cv, opt) {
   const c = cv.getContext('2d');
   c.setTransform(1, 0, 0, 1, 0, 0);
   const lay = computeLayout(c);
-  const v = opt.full ? { x: 0, y: 0, w: lay.W, h: lay.H, scale: 1 } : displayView(lay);
+  const v = opt.full ? { x: 0, y: 0, w: lay.W, h: lay.H, scale: opt.scale || 1 } : displayView(lay);
   const pw = Math.max(1, Math.round(v.w * v.scale)), ph = Math.max(1, Math.round(v.h * v.scale));
   if (cv.width !== pw) cv.width = pw;
   if (cv.height !== ph) cv.height = ph;
@@ -1015,8 +1016,9 @@ async function decodeBlob(blob) {
     throw e;
   }
 }
-async function makeImageEntry(blob, name, credit) {
+async function makeImageEntry(blob, name, credit, forcedId) {
   let d = await decodeBlob(blob);
+  let storeBlob = blob;
   if (settings.downscale && Math.max(d.w, d.h) > MAX_IMPORT) {
     const sc = MAX_IMPORT / Math.max(d.w, d.h);
     const cv = document.createElement('canvas');
@@ -1028,6 +1030,8 @@ async function makeImageEntry(blob, name, credit) {
     if (d.src.close) d.src.close();
     if (d.url) URL.revokeObjectURL(d.url);
     d = { src: cv, w: cv.width, h: cv.height };
+    const keepAlpha = /png|webp|gif/.test(blob.type || '');
+    storeBlob = await new Promise(res => cv.toBlob(res, keepAlpha ? 'image/png' : 'image/jpeg', 0.92)) || blob;
   }
   const ts = 120 / Math.max(d.w, d.h);
   const tc = document.createElement('canvas');
@@ -1035,8 +1039,8 @@ async function makeImageEntry(blob, name, credit) {
   tc.height = Math.max(1, Math.round(d.h * Math.min(1, ts)));
   tc.getContext('2d').drawImage(d.src, 0, 0, tc.width, tc.height);
   const thumbBlob = await new Promise(res => tc.toBlob(res, 'image/jpeg', 0.7));
-  const id = uid();
-  images.set(id, { src: d.src, w: d.w, h: d.h, name: name || 'image', credit: credit || '', thumb: thumbBlob ? URL.createObjectURL(thumbBlob) : '' });
+  const id = forcedId || uid();
+  images.set(id, { src: d.src, w: d.w, h: d.h, blob: storeBlob, name: name || 'image', credit: credit || '', thumb: thumbBlob ? URL.createObjectURL(thumbBlob) : '' });
   return id;
 }
 function newPanel(over) {
@@ -1046,7 +1050,10 @@ function isImageFile(f) {
   return (f.type && f.type.startsWith('image/')) || /\.(png|jpe?g|gif|webp|bmp|avif|svg|heic|heif)$/i.test(f.name || '');
 }
 async function addFiles(fileList) {
-  const files = Array.from(fileList || []).filter(isImageFile);
+  const all = Array.from(fileList || []);
+  const proj = all.find(f => /\.mememe$/i.test(f.name || ''));
+  if (proj) { importProjectFile(proj); return; }
+  const files = all.filter(isImageFile);
   if (!files.length) { toast('Please choose image files.'); return; }
   const hint = $('processingHint');
   hint.hidden = false;
@@ -2179,18 +2186,7 @@ $('shareBtn').addEventListener('click', async () => {
   try { await navigator.share({ files: [file], title: 'mememe' }); }
   catch (e) { if (e && e.name !== 'AbortError') toast('Sharing failed — use Download instead.'); }
 });
-$('clearAllBtn').addEventListener('click', () => {
-  if (!hasContent()) return;
-  if (!confirm('Remove all images, texts and bubbles and reset the layout?')) return;
-  state.layout = defaultLayout();
-  state.panels = [];
-  state.elements = [];
-  sel = null;
-  detailId = null;
-  geo.clear();
-  commit();
-  syncAll();
-});
+$('clearAllBtn').addEventListener('click', () => newProject());
 
 // =====================================================================
 // Templates & free images
@@ -2462,6 +2458,448 @@ $('urlLoadBtn').addEventListener('click', async () => {
 });
 
 // =====================================================================
+// Projects (IndexedDB autosave, list, export / import as .mememe)
+// =====================================================================
+const DB_NAME = 'mememe';
+const CURRENT_KEY = 'mememe-current';
+let dbPromise = null;
+let projectsOK = false;
+let currentProject = null;   // { id, name, created }
+let savedImgs = new Set();   // image ids already stored in the DB
+let saveTimer = null;
+let saveDirty = false;
+let saving = null;
+let loadingProject = false;
+
+function openDB() {
+  if (!dbPromise) {
+    dbPromise = new Promise((res, rej) => {
+      if (!window.indexedDB) { rej(new Error('IndexedDB unavailable')); return; }
+      const r = indexedDB.open(DB_NAME, 1);
+      r.onupgradeneeded = () => {
+        const d = r.result;
+        if (!d.objectStoreNames.contains('projects')) d.createObjectStore('projects', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('images')) d.createObjectStore('images', { keyPath: 'id' });
+      };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  }
+  return dbPromise;
+}
+const reqP = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const txP = (tx) => new Promise((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); });
+async function dbGet(store, key) { const d = await openDB(); return reqP(d.transaction(store).objectStore(store).get(key)); }
+async function dbAll(store) { const d = await openDB(); return reqP(d.transaction(store).objectStore(store).getAll()); }
+async function dbKeys(store) { const d = await openDB(); return reqP(d.transaction(store).objectStore(store).getAllKeys()); }
+async function dbPut(store, values) {
+  const d = await openDB();
+  const tx = d.transaction(store, 'readwrite');
+  (Array.isArray(values) ? values : [values]).forEach(v => tx.objectStore(store).put(v));
+  return txP(tx);
+}
+async function dbDel(store, keys) {
+  const d = await openDB();
+  const tx = d.transaction(store, 'readwrite');
+  (Array.isArray(keys) ? keys : [keys]).forEach(k => tx.objectStore(store).delete(k));
+  return txP(tx);
+}
+async function dbClear(store) { const d = await openDB(); const tx = d.transaction(store, 'readwrite'); tx.objectStore(store).clear(); return txP(tx); }
+
+function stamp(t) {
+  const d = new Date(t), p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function updateSaveStatus(text) {
+  const el = $('saveStatus');
+  if (!projectsOK) { el.textContent = text || 'Projects can’t be saved in this browser mode (no storage) — download your result before closing.'; return; }
+  if (text) { el.textContent = text; return; }
+  el.textContent = currentProject
+    ? `Project “${currentProject.name}” · ${saveDirty ? 'unsaved changes…' : 'saved automatically'}`
+    : 'New project — saved automatically as soon as it has content.';
+}
+function scheduleSave() {
+  if (!projectsOK || loadingProject) return;
+  if (!currentProject && !hasContent()) return;
+  saveDirty = true;
+  updateSaveStatus();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveNow, 1200);
+}
+async function makeThumb() {
+  const cv = document.createElement('canvas');
+  const lay = computeLayout(cv.getContext('2d'));
+  renderTo(cv, { ui: false, full: true, scale: Math.min(1, 320 / Math.max(lay.W, lay.H)) });
+  const flat = document.createElement('canvas');
+  flat.width = cv.width; flat.height = cv.height;
+  const fc = flat.getContext('2d');
+  fc.fillStyle = '#ffffff'; fc.fillRect(0, 0, flat.width, flat.height);
+  fc.drawImage(cv, 0, 0);
+  return new Promise(res => flat.toBlob(res, 'image/jpeg', 0.75));
+}
+function usedImageIds() { return Array.from(new Set(state.panels.filter(p => p.imgId).map(p => p.imgId))); }
+async function saveNow() {
+  clearTimeout(saveTimer);
+  if (!projectsOK || !saveDirty) return;
+  if (saving) { await saving; if (!saveDirty) return; }
+  saving = (async () => {
+    try {
+      if (!currentProject) {
+        currentProject = { id: uid(), name: 'Project ' + stamp(Date.now()), created: Date.now() };
+        try { localStorage.setItem(CURRENT_KEY, currentProject.id); } catch (e) { /* ignore */ }
+        if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+      }
+      saveDirty = false;
+      const ids = usedImageIds();
+      const newImgs = ids.filter(id => !savedImgs.has(id) && images.get(id) && images.get(id).blob).map(id => {
+        const im = images.get(id);
+        return { id, blob: im.blob, name: im.name, credit: im.credit, w: im.w, h: im.h };
+      });
+      if (newImgs.length) { await dbPut('images', newImgs); newImgs.forEach(r => savedImgs.add(r.id)); }
+      const thumb = await makeThumb();
+      await dbPut('projects', {
+        id: currentProject.id, name: currentProject.name, created: currentProject.created, updated: Date.now(),
+        state: snapshot(), imageIds: ids, count: state.panels.length, thumb
+      });
+      updateSaveStatus();
+    } catch (err) {
+      saveDirty = true;
+      updateSaveStatus('⚠ Saving failed — storage may be full. Export the project or delete old ones under Projects.');
+    } finally {
+      saving = null;
+      scheduleRender();
+    }
+  })();
+  return saving;
+}
+function releaseImages(keep) {
+  for (const [id, im] of images) {
+    if (keep && keep.has(id)) continue;
+    if (im.src && im.src.close) im.src.close();
+    if (im.thumb) URL.revokeObjectURL(im.thumb);
+    images.delete(id);
+  }
+}
+function resetEditor() {
+  sel = null;
+  detailId = null;
+  geo.clear();
+  history = []; hIndex = -1;
+}
+async function loadProject(id) {
+  const rec = await dbGet('projects', id);
+  if (!rec) return false;
+  if (saveDirty) await saveNow();
+  loadingProject = true;
+  const hint = $('processingHint');
+  hint.hidden = false;
+  hint.textContent = `Opening “${rec.name}”…`;
+  try {
+    const o = JSON.parse(rec.state);
+    const need = new Set(rec.imageIds || []);
+    releaseImages(need);
+    let missing = 0;
+    for (const imgId of need) {
+      if (images.has(imgId)) continue;
+      const r = await dbGet('images', imgId);
+      if (!r) { missing++; continue; }
+      try { await makeImageEntry(r.blob, r.name, r.credit, imgId); savedImgs.add(imgId); } catch (e) { missing++; }
+    }
+    resetEditor();
+    // fill in settings added in later versions
+    const d = defaultLayout();
+    state.layout = Object.assign(d, o.layout, { cap: Object.assign(d.cap, o.layout && o.layout.cap), num: Object.assign(d.num, o.layout && o.layout.num) });
+    state.panels = o.panels || [];
+    state.elements = o.elements || [];
+    currentProject = { id: rec.id, name: rec.name, created: rec.created };
+    try { localStorage.setItem(CURRENT_KEY, rec.id); } catch (e) { /* ignore */ }
+    ensureUsedFonts();
+    commit();
+    saveDirty = false;
+    syncAll();
+    if (missing) toast(`${missing} image(s) of this project could not be restored.`, 4500);
+    return true;
+  } finally {
+    loadingProject = false;
+    hint.hidden = true;
+    updateSaveStatus();
+  }
+}
+async function newProject() {
+  if (saveDirty) await saveNow();
+  const had = !!currentProject;
+  currentProject = null;
+  try { localStorage.removeItem(CURRENT_KEY); } catch (e) { /* ignore */ }
+  releaseImages(null);
+  resetEditor();
+  state.layout = defaultLayout();
+  state.panels = [];
+  state.elements = [];
+  commit();
+  saveDirty = false;
+  syncAll();
+  updateSaveStatus();
+  if (had) toast('New project started — the previous one is saved under 📁 Projects.');
+}
+async function gcImages() {
+  const projs = await dbAll('projects');
+  const used = new Set(projs.flatMap(p => p.imageIds || []));
+  usedImageIds().forEach(id => used.add(id));
+  const stale = (await dbKeys('images')).filter(k => !used.has(k));
+  if (stale.length) { await dbDel('images', stale); stale.forEach(k => savedImgs.delete(k)); }
+}
+async function initProjects() {
+  try {
+    await openDB();
+    savedImgs = new Set(await dbKeys('images'));
+    projectsOK = true;
+  } catch (e) {
+    projectsOK = false;
+    updateSaveStatus();
+    return;
+  }
+  const id = localStorage.getItem(CURRENT_KEY);
+  if (id && !hasContent()) {
+    try {
+      if (await loadProject(id)) toast(`Welcome back — “${currentProject.name}” restored.`);
+    } catch (e) { toast('The last project could not be restored.'); }
+  }
+  updateSaveStatus();
+  gcImages().catch(() => {});
+}
+
+// ---------- Projects dialog ----------
+let projThumbUrls = [];
+async function openProjects() {
+  if (!projectsOK) { toast('Projects need browser storage, which isn’t available here (e.g. private mode).', 4500); return; }
+  if (saveDirty) await saveNow();
+  openModal('projModal');
+  renderProjects();
+}
+$('projectsBtn').addEventListener('click', openProjects);
+async function renderProjects() {
+  const list = (await dbAll('projects')).sort((a, b) => b.updated - a.updated);
+  projThumbUrls.forEach(u => URL.revokeObjectURL(u));
+  projThumbUrls = [];
+  const box = $('projList');
+  box.innerHTML = '';
+  if (!list.length) box.innerHTML = '<p class="muted">No saved projects yet. Add an image and it is saved automatically.</p>';
+  list.forEach(rec => {
+    const row = document.createElement('div');
+    const isCur = currentProject && currentProject.id === rec.id;
+    row.className = 'proj' + (isCur ? ' current' : '');
+    const img = document.createElement('img');
+    img.className = 'pthumb';
+    img.alt = '';
+    if (rec.thumb) { const u = URL.createObjectURL(rec.thumb); projThumbUrls.push(u); img.src = u; }
+    const info = document.createElement('div');
+    info.className = 'pinfo';
+    const nm = document.createElement('div');
+    nm.className = 'pname';
+    nm.textContent = rec.name;
+    if (isCur) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = 'open'; nm.appendChild(t); }
+    const meta = document.createElement('div');
+    meta.className = 'pmeta';
+    meta.textContent = `${rec.count || 0} panel${rec.count === 1 ? '' : 's'} · ${stamp(rec.updated)}`;
+    info.append(nm, meta);
+    const open = async () => {
+      if (isCur) { closeModal('projModal'); return; }
+      closeModal('projModal');
+      await loadProject(rec.id);
+    };
+    img.addEventListener('click', open);
+    info.addEventListener('click', open);
+    info.title = img.title = isCur ? 'This project is open' : 'Open this project';
+    const btns = document.createElement('div');
+    btns.className = 'pbtns';
+    const mk = (label, title, fn, danger) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'icon small' + (danger ? ' danger' : '');
+      b.textContent = label;
+      b.title = title;
+      b.addEventListener('click', fn);
+      btns.appendChild(b);
+    };
+    mk('✎', 'Rename', () => renameProject(rec));
+    mk('⧉', 'Duplicate (independent copy)', () => duplicateProject(rec));
+    mk('⇩', 'Export as .mememe file', () => exportProject(rec.id));
+    mk('🗑', 'Delete', () => deleteProject(rec), true);
+    row.append(img, info, btns);
+    box.appendChild(row);
+  });
+  if (navigator.storage && navigator.storage.estimate) {
+    try {
+      const est = await navigator.storage.estimate();
+      const mb = (n) => (n / 1048576).toFixed(n > 1048576 * 100 ? 0 : 1) + ' MB';
+      $('projStorage').textContent = `${list.length} project${list.length === 1 ? '' : 's'} · using ${mb(est.usage || 0)}${est.quota ? ' of about ' + mb(est.quota) : ''} in this browser.`;
+    } catch (e) { $('projStorage').textContent = ''; }
+  }
+}
+async function renameProject(rec) {
+  const name = prompt('Project name:', rec.name);
+  if (!name || !name.trim()) return;
+  rec.name = name.trim().slice(0, 80);
+  await dbPut('projects', rec);
+  if (currentProject && currentProject.id === rec.id) { currentProject.name = rec.name; updateSaveStatus(); }
+  renderProjects();
+}
+async function duplicateProject(rec) {
+  const copy = Object.assign({}, rec, { id: uid(), name: rec.name + ' (copy)', created: Date.now(), updated: Date.now() });
+  await dbPut('projects', copy);
+  toast(`Duplicated as “${copy.name}”.`);
+  renderProjects();
+}
+async function deleteProject(rec) {
+  if (!confirm(`Delete “${rec.name}”? This can't be undone (export it first if you want a backup).`)) return;
+  const isCur = currentProject && currentProject.id === rec.id;
+  await dbDel('projects', rec.id);
+  if (isCur) { saveDirty = false; currentProject = null; await newProject(); }
+  await gcImages();
+  renderProjects();
+}
+$('projNewBtn').addEventListener('click', async () => { closeModal('projModal'); await newProject(); });
+$('projImportBtn').addEventListener('click', () => $('projImportInput').click());
+$('projImportInput').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) importProjectFile(f); });
+$('deleteProjectsBtn').addEventListener('click', async () => {
+  if (!projectsOK) return;
+  if (!confirm('Delete ALL saved projects and their images from this browser? This can\'t be undone.')) return;
+  if (!confirm('Really delete everything?')) return;
+  saveDirty = false;
+  clearTimeout(saveTimer);
+  await dbClear('projects');
+  await dbClear('images');
+  savedImgs.clear();
+  currentProject = null;
+  await newProject();
+  toast('All projects deleted.');
+});
+
+// ---------- .mememe files (a plain ZIP: project.json + images/) ----------
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(u8) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 255] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+// Uncompressed ("stored") ZIP — images are already compressed anyway.
+function zipStore(files) {
+  const enc = new TextEncoder();
+  const now = new Date();
+  const time = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const date = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const parts = [], central = [];
+  let offset = 0;
+  files.forEach(f => {
+    const name = enc.encode(f.name);
+    const crc = crc32(f.data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, time, true); lh.setUint16(12, date, true); lh.setUint32(14, crc, true);
+    lh.setUint32(18, f.data.length, true); lh.setUint32(22, f.data.length, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(lh.buffer, name, f.data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, time, true); ch.setUint16(14, date, true); ch.setUint32(16, crc, true);
+    ch.setUint32(20, f.data.length, true); ch.setUint32(24, f.data.length, true); ch.setUint16(28, name.length, true);
+    ch.setUint32(42, offset, true);
+    central.push(ch.buffer, name);
+    offset += 30 + name.length + f.data.length;
+  });
+  const cdSize = central.reduce((a, b) => a + b.byteLength, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob(parts.concat(central, [end.buffer]), { type: 'application/zip' });
+}
+async function unzip(buf) {
+  const dv = new DataView(buf);
+  let e = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65557); i--) { if (dv.getUint32(i, true) === 0x06054b50) { e = i; break; } }
+  if (e < 0) throw new Error('not a zip');
+  const count = dv.getUint16(e + 10, true);
+  let p = dv.getUint32(e + 16, true);
+  const dec = new TextDecoder();
+  const out = {};
+  for (let i = 0; i < count; i++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('bad zip');
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+    const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true), loff = dv.getUint32(p + 42, true);
+    const name = dec.decode(new Uint8Array(buf, p + 46, nlen));
+    p += 46 + nlen + xlen + clen;
+    const start = loff + 30 + dv.getUint16(loff + 26, true) + dv.getUint16(loff + 28, true);
+    let data = new Uint8Array(buf, start, csize);
+    if (method === 8) {
+      if (!window.DecompressionStream) throw new Error('compressed zip not supported');
+      data = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+    } else if (method !== 0) throw new Error('unsupported zip method');
+    out[name] = data;
+  }
+  return out;
+}
+const extFor = (type) => ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/svg+xml': 'svg', 'image/avif': 'avif', 'image/bmp': 'bmp' }[type] || 'bin');
+async function exportProject(id) {
+  if (currentProject && currentProject.id === id && saveDirty) await saveNow();
+  const rec = await dbGet('projects', id);
+  if (!rec) return;
+  const files = [];
+  const meta = [];
+  for (const imgId of rec.imageIds || []) {
+    const r = await dbGet('images', imgId);
+    if (!r) continue;
+    const file = `images/${imgId}.${extFor(r.blob.type)}`;
+    files.push({ name: file, data: new Uint8Array(await r.blob.arrayBuffer()) });
+    meta.push({ id: imgId, file, type: r.blob.type, name: r.name, credit: r.credit, w: r.w, h: r.h });
+  }
+  const json = { app: 'mememe', format: 1, appVersion: APP_VERSION, name: rec.name, created: rec.created, updated: rec.updated, state: JSON.parse(rec.state), images: meta };
+  files.unshift({ name: 'project.json', data: new TextEncoder().encode(JSON.stringify(json)) });
+  const blob = zipStore(files);
+  const safe = rec.name.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'project';
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = safe + '.mememe';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+async function importProjectFile(file) {
+  if (!projectsOK) { toast('Projects need browser storage, which isn’t available here.'); return; }
+  try {
+    const files = await unzip(await file.arrayBuffer());
+    if (!files['project.json']) throw new Error('no project.json');
+    const json = JSON.parse(new TextDecoder().decode(files['project.json']));
+    if (json.app !== 'mememe' || !json.state) throw new Error('not a mememe project');
+    const recs = [];
+    (json.images || []).forEach(m => {
+      const data = files[m.file];
+      if (!data || savedImgs.has(m.id)) return;
+      recs.push({ id: m.id, blob: new Blob([data], { type: m.type || 'application/octet-stream' }), name: m.name || 'image', credit: m.credit || '', w: m.w, h: m.h });
+    });
+    if (recs.length) { await dbPut('images', recs); recs.forEach(r => savedImgs.add(r.id)); }
+    const existing = await dbAll('projects');
+    let name = json.name || file.name.replace(/\.[^.]+$/, '');
+    if (existing.some(p => p.name === name)) name += ' (imported)';
+    const st = json.state;
+    const ids = Array.from(new Set((st.panels || []).filter(p => p.imgId).map(p => p.imgId)));
+    const rec = { id: uid(), name, created: json.created || Date.now(), updated: Date.now(), state: JSON.stringify(st), imageIds: ids, count: (st.panels || []).length, thumb: null };
+    await dbPut('projects', rec);
+    closeModal('projModal');
+    await loadProject(rec.id);
+    saveDirty = true;      // creates the thumbnail
+    saveNow();
+    toast(`Imported “${name}”.`);
+  } catch (err) {
+    toast('That file could not be opened as a mememe project.', 4000);
+  }
+}
+
+// =====================================================================
 // Menu, modals, header
 // =====================================================================
 const menu = $('menu');
@@ -2478,6 +2916,7 @@ $('themeToggle').addEventListener('click', () => {
 });
 $('settingsBtn').addEventListener('click', () => { menu.style.display = 'none'; openModal('settingsModal'); });
 $('aboutBtn').addEventListener('click', () => { menu.style.display = 'none'; openModal('aboutModal'); });
+$('menuProjectsBtn').addEventListener('click', () => { menu.style.display = 'none'; openProjects(); });
 
 function openModal(id) { $(id).classList.add('open'); }
 function closeModal(id) { $(id).classList.remove('open'); }
@@ -2519,8 +2958,10 @@ fsBtn.addEventListener('click', () => {
 document.addEventListener('fullscreenchange', () => { fsBtn.classList.toggle('active', !!document.fullscreenElement); applyLayoutMode(); });
 
 window.addEventListener('beforeunload', (e) => {
-  if (hasContent()) { e.preventDefault(); e.returnValue = ''; }
+  // with working storage, work is autosaved — only warn if something is still pending
+  if ((projectsOK ? saveDirty : hasContent())) { saveNow(); e.preventDefault(); e.returnValue = ''; }
 });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && saveDirty) saveNow(); });
 
 // =====================================================================
 // Init
@@ -2543,6 +2984,7 @@ if (document.fonts && document.fonts.addEventListener) document.fonts.addEventLi
 applyLayoutMode();
 commit();
 syncAll();
+initProjects();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));

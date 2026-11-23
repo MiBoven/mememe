@@ -1,5 +1,14 @@
 # Changelog
 
+### 0.3.0 — 2026-11-23 — Projects
+- Projects are saved automatically in the browser (IndexedDB, images included) about a second after every change, and when the tab is hidden or closed
+- The last open project is restored automatically when the app is opened again
+- New 📁 Projects dialog (button next to “Blank panel” and in the menu): open, rename, duplicate (independent copy), export, delete, start a new project; shows how much storage is used
+- Export / import projects as `.mememe` files (a plain ZIP with `project.json` and the images, written by the app itself — no library); `.mememe` files can also be dropped onto the app
+- “Start over” is now “＋ New project” — the previous project stays saved
+- Settings: “Delete all projects…” (with double confirmation)
+- Save status shown above the download button; images no longer referenced by any project are cleaned up automatically
+
 ### 0.2.1 — 2026-11-23 — Polish: fullscreen side view, transparent background
 - Side-by-side view “Auto” now only kicks in while fullscreen is on (and the screen is wide); in the side view the toolbar moves to the right column with the other controls
 - The header stays fixed at the top in fullscreen

@@ -32,6 +32,7 @@
     <div class="menu-wrap">
       <button class="icon" id="menuBtn" title="Menu" aria-label="Menu" aria-haspopup="true">⋮</button>
       <div class="menu" id="menu" style="display:none;">
+        <button type="button" id="menuProjectsBtn">📁 Projects</button>
         <button type="button" id="themeToggle">◐ Dark mode</button>
         <button type="button" id="settingsBtn">⚙ Settings</button>
         <button type="button" id="aboutBtn">ⓘ About</button>
@@ -52,6 +53,7 @@
   <div class="btn-row-inline">
     <button type="button" class="btn secondary" id="templatesBtn" title="Pick a meme template or a free image from a third-party website">🖼 Templates…</button>
     <button type="button" class="btn secondary" id="colorPanelBtn" title="Add an empty colored panel, e.g. for text next to an image">▭ Blank panel</button>
+    <button type="button" class="btn secondary" id="projectsBtn" title="Open, duplicate, export or import saved projects">📁 Projects</button>
   </div>
   <p class="processing-hint" id="processingHint" hidden></p>
   <div class="strip-wrap" id="stripWrap" hidden>
@@ -503,11 +505,12 @@
     <span class="val" id="exQualityVal"></span>
   </div>
   <p class="muted small-txt" id="exSize"></p>
+  <p class="muted small-txt save-status" id="saveStatus"></p>
   <div class="btn-row">
     <button type="button" class="btn" id="downloadBtn" title="Save the finished image">Download</button>
     <button type="button" class="btn secondary" id="shareBtn" title="Share the image with another app" hidden>Share…</button>
   </div>
-  <button type="button" id="clearAllBtn" title="Remove everything and start a new composition">Start over</button>
+  <button type="button" id="clearAllBtn" title="Start a new, empty project — the current one stays saved under Projects">＋ New project</button>
 </div>
 
 </section>
@@ -555,6 +558,22 @@
   </div>
 </div>
 
+<!-- ---------- Projects modal ---------- -->
+<div class="modal-bg" id="projModal">
+  <div class="modal wide">
+    <h2>Projects</h2>
+    <p class="muted small-txt">Your work is saved automatically in this browser (images included). Export a project as a <code>.mememe</code> file to keep a backup or to continue on another device.</p>
+    <div class="btn-row-inline">
+      <button type="button" class="btn" id="projNewBtn" title="Start a new, empty project">＋ New project</button>
+      <button type="button" class="btn secondary" id="projImportBtn" title="Open a .mememe project file">⇪ Import…</button>
+      <input type="file" id="projImportInput" accept=".mememe,.zip,application/zip">
+    </div>
+    <p class="muted small-txt" id="projStorage"></p>
+    <div class="proj-list" id="projList"></div>
+    <button class="close" data-close="projModal">Close</button>
+  </div>
+</div>
+
 <!-- ---------- Settings modal ---------- -->
 <div class="modal-bg" id="settingsModal">
   <div class="modal">
@@ -599,6 +618,7 @@
     <p class="muted small-txt">Tip: click a setting's label in the editor to reset it to its default.</p>
     <div class="subhead">Reset</div>
     <button type="button" class="btn danger-outline" id="resetSettingsBtn" title="Restore all settings of this page (theme, defaults, view options) to factory values">Reset all settings…</button>
+    <button type="button" class="btn danger-outline" id="deleteProjectsBtn" title="Delete every saved project and its images from this browser">Delete all projects…</button>
     <button class="close" data-close="settingsModal">Close</button>
   </div>
 </div>
@@ -614,10 +634,10 @@
       </div>
     </div>
     <p>Version <strong id="aboutVersion"></strong></p>
-    <p>Create memes, image grids, mosaics, comic pages and storylines with captions, numbers, text and speech bubbles.</p>
+    <p>Create memes, image grids, mosaics, comic pages and storylines with captions, numbers, text and speech bubbles. Projects are saved automatically in your browser.</p>
     <p class="muted small-txt">
       Privacy: everything happens on your device. Your images never leave it. The only outside requests happen when you
-      explicitly load templates or an image from a web address. Settings are kept in your browser's local storage.
+      explicitly load templates or an image from a web address. Settings are kept in your browser's local storage, projects (incl. their images) in its IndexedDB.
     </p>
     <p class="muted small-txt">
       Fonts: Anton, Comic Relief, Archivo Black, Montserrat, Bitter and Anonymous Pro — all under the SIL Open Font License,

@@ -60,13 +60,20 @@ A privacy-friendly web app for making memes, image grids, mosaics, comic pages a
 - Nothing is requested until you press **Load** / **Search**. Requests go directly from your device (`no-referrer`, no cookies). If the full image is blocked, a smaller preview is used where available; otherwise the app offers a link to save the image and add it manually
 - Images can also be added from any `https://` address (works only if that site allows it via CORS)
 
+### Projects
+- Everything is **saved automatically** in the browser (IndexedDB, including the images) about a second after each change; the last project is restored when the app is opened again
+- **📁 Projects** (next to “Blank panel” and in the menu): open, rename, duplicate, export, delete, start a new project, see the storage used
+- **Export / import** as `.mememe` files — a plain, uncompressed ZIP with `project.json` and the images — for backups or to continue on another device; `.mememe` files can also be dropped onto the app
+- *Settings → Delete all projects…* removes everything (double confirmation)
+- Custom font files are not stored in projects; texts using them fall back to Anton until the font is loaded again
+
 ### Editing & export
 - Undo / redo (40 steps), keyboard shortcuts: Ctrl/Cmd+Z, Ctrl/Cmd+Y or Shift+Ctrl/Cmd+Z, Delete (selected text, bubble, image or blank panel), arrow keys (Shift = 10 px), Esc
 - Clicking outside the canvas and the editing controls deselects everything
 - Click a setting's label to reset it to its default; every control has a tooltip; *Settings → Reset all settings…* restores factory defaults
 - Export as PNG, JPG or WebP (quality slider); falls back to PNG if a format isn't supported. File name: `mememe_YYYYMMDD_HHMMSS.ext`
 - **Share…** button on devices that support sharing files
-- Warning before an accidental reload discards your work
+- Warning before closing only if a save is still pending
 
 ### General
 - Side-by-side view: canvas fixed on the left, toolbar and settings on the right (Auto = in fullscreen on wide screens / Always / Never in Settings); in fullscreen the header stays at the top
@@ -87,6 +94,8 @@ The on-screen canvas shows a "view" of the composition: the whole result or, in 
 Speech bubbles are drawn on two small scratch canvases: one for the fill (applied with the fill opacity as a whole, so overlapping parts like body + tail never get darker) and one for the border (stroked at double width, interior punched out) — one seamless outline around body + tail.
 
 Decoded images are kept outside the serializable state, so undo/redo only snapshots a small JSON description of the composition.
+
+Projects live in IndexedDB in two stores: `projects` (name, dates, the JSON state, the ids of the images used, a small JPEG thumbnail) and `images` (one record per image with its blob, shared between duplicated projects). Images that no project references anymore are removed automatically. The `.mememe` export is a stored ZIP built by a small built-in writer (CRC-32 + headers); the importer also accepts deflate-compressed ZIPs via `DecompressionStream`.
 
 ## Files
 
