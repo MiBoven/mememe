@@ -3,7 +3,7 @@
  * Client-side meme / grid / comic composer. Everything is drawn on a <canvas>;
  * nothing is uploaded. */
 
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.5.1';
 const $ = (id) => document.getElementById(id);
 const isCoarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
 

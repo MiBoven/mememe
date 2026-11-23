@@ -1,5 +1,8 @@
 # Changelog
 
+### 0.5.1 — 2026-11-23 — Link previews
+- Added Open Graph / Twitter meta tags so shared links show the logo, the title with subtitle and a short description in chats (WhatsApp, Signal, Telegram, …) and social media
+
 ### 0.5.0 — 2026-11-23 — Real eraser, shapes, filters
 - **Real eraser:** rubs out parts of a drawing pixel by pixel (each drawing is painted on its own layer, so the image below is never touched); every eraser stroke can be undone
 - **+ Shape:** rectangle (with rounded corners), ellipse, line and arrow — fill on/off with color and opacity, line color and width, dashed lines, arrow heads at the end / start / both ends, rotation and opacity; lines and arrows have two draggable end handles (Shift = 15° steps)
