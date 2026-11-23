@@ -1,5 +1,16 @@
 # Changelog
 
+### 0.2.1 — 2026-11-23 — Polish: fullscreen side view, transparent background
+- Side-by-side view “Auto” now only kicks in while fullscreen is on (and the screen is wide); in the side view the toolbar moves to the right column with the other controls
+- The header stays fixed at the top in fullscreen
+- Selected images and blank panels can be removed with Del / Backspace
+- New ⚙ button next to an image's caption jumps to the caption style settings; “Captions & subtitles” renamed to “Captions” (a subtitle is just the caption placed at the bottom of the image)
+- Background opacity: the layout background can be (semi-)transparent for PNG / WebP; JPG exports get a white background instead
+- Settings: “Reset all settings…” (with confirmation)
+- Thought bubbles: bumps are spaced along the outline, so flat or small clouds get fewer, round bumps instead of squashed ones
+- Fixed a thin vertical line that could appear at the edge of bubbles (stale pixels on the scratch canvas)
+- Fixed missing spacing between some rows (e.g. Resolution / Cells, text field / Shape)
+
 ### 0.2.0 — 2026-11-23 — Bound elements, detail view, numbering, frames
 - Texts and bubbles now belong to the image they sit on: positions and sizes are relative to that image, they move along when images are reordered and switch images automatically when dragged onto another one (or can be attached to the whole canvas)
 - Detail view: double-tap an image (or 🔍) to zoom into it for precise placing; ◀ ▶ to step through images

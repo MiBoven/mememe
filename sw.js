@@ -1,6 +1,6 @@
 // mememe service worker — stale-while-revalidate for the app's own files.
 // Requests to other sites (meme templates) are never cached here.
-const CACHE = 'mememe-v0.2.0';
+const CACHE = 'mememe-v0.2.1';
 const ASSETS = [
   '/', '/index.html', '/style.css', '/app.js', '/manifest.json', '/favicon.ico',
   '/android-chrome-192x192.png', '/android-chrome-512x512.png',

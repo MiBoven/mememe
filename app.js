@@ -3,7 +3,7 @@
  * Client-side meme / grid / comic composer. Everything is drawn on a <canvas>;
  * nothing is uploaded. */
 
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.2.1';
 const $ = (id) => document.getElementById(id);
 const isCoarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
 
@@ -72,7 +72,7 @@ setTheme(localStorage.getItem('mememe-theme') || 'dark');
 // =====================================================================
 function defaultLayout() {
   return {
-    cols: 'auto', width: settings.width, mode: 'uniform', aspect: 'first', fit: 'cover', bg: '#ffffff',
+    cols: 'auto', width: settings.width, mode: 'uniform', aspect: 'first', fit: 'cover', bg: '#ffffff', bgOpacity: 100,
     gap: 0, gapColor: '#000000', pad: 0, padColor: '#000000', border: 0, borderColor: '#000000', radius: 0,
     cap: {
       pos: 'overlayBottom', font: 'montserrat', size: 44, color: '#ffffff', stroke: '#000000', strokeW: 6,
@@ -406,6 +406,7 @@ function layoutAt(ctx, W) {
   const H = Math.max(1, Math.round(y - gap + pad));
   return { W: Math.round(W), H, s, cu, gap, pad, cells };
 }
+function bgStyle() { const L = state.layout; return hexToRgba(L.bg, (L.bgOpacity ?? 100) / 100); }
 function canvasFrame(lay) { return { x: 0, y: 0, w: lay.W, h: lay.H, canvas: true }; }
 function frameOf(el, lay) {
   if (el.panelId) {
@@ -491,10 +492,12 @@ function renderTo(cv, opt) {
 function drawComposition(c, lay, scale, withUI) {
   const L = state.layout;
   const { W, H, pad, gap } = lay;
-  // outer frame + background
-  c.fillStyle = pad > 0 ? L.padColor : L.bg;
-  c.fillRect(0, 0, W, H);
-  if (pad > 0) { c.fillStyle = L.bg; c.fillRect(pad, pad, W - 2 * pad, H - 2 * pad); }
+  // outer frame + background (the background may be (semi-)transparent)
+  const bgFill = bgStyle();
+  c.clearRect(0, 0, W, H);
+  if (pad > 0) { c.fillStyle = L.padColor; c.fillRect(0, 0, W, H); c.clearRect(pad, pad, W - 2 * pad, H - 2 * pad); }
+  c.fillStyle = bgFill;
+  c.fillRect(pad, pad, W - 2 * pad, H - 2 * pad);
   // lines between the images: each cell (incl. caption bar) is backed by a
   // slightly larger rect in the gap color, clipped to the inner area
   if (gap > 0 && lay.cells.length > 1) {
@@ -537,7 +540,8 @@ function drawPanel(c, cell, lay) {
   } else {
     const im = images.get(p.imgId);
     if (im) {
-      c.fillStyle = L.bg;
+      c.clearRect(x, y, w, h);
+      c.fillStyle = bgStyle();
       c.fillRect(x, y, w, h);
       const fit = p.fit || L.fit;
       const zoom = p.zoom || 1;
@@ -768,21 +772,31 @@ function bubbleShapes(el, g) {
     }
     body.closePath();
   } else if (el.shape === 'thought') {
-    // One continuous scalloped outline (cloud) — no overlapping circles.
-    const perim = Math.PI * (rx + ry);
-    const n = Math.max(8, Math.round(perim / (Math.min(rx, ry) * 0.62)));
-    const pt = (a, f) => ({ x: cx + Math.cos(a) * rx * f, y: cy + Math.sin(a) * ry * f });
-    const step = (Math.PI * 2) / n;
-    const a0 = 0.2;
-    const start = pt(a0, 0.9);
-    body.moveTo(start.x, start.y);
-    for (let i = 0; i < n; i++) {
-      const a = a0 + i * step;
-      const bulge = 1.16 + rnd() * 0.08;
-      const c1 = pt(a + step * 0.12, bulge);
-      const c2 = pt(a + step * 0.88, bulge);
-      const end = pt(a + step, 0.9);
-      body.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, end.x, end.y);
+    // One continuous cloud outline. Bumps are spaced by arc length (not angle),
+    // so a flat cloud gets fewer, equally round bumps instead of squashed ones.
+    const minR = Math.min(rx, ry);
+    const bumpGuess = Math.max(minR * 0.55, g.px * 1.1);
+    let n = clamp(Math.round((Math.PI * (rx + ry)) / (bumpGuess * 1.9)), 5, 16);
+    const bh = Math.min(minR * 0.32, (Math.PI * (rx + ry)) / n * 0.3); // bump height
+    const ax = Math.max(rx - bh, rx * 0.5), ay = Math.max(ry - bh, ry * 0.5);
+    // sample the inner ellipse, then pick n points at equal arc length
+    const S = 240, pts = [], acc = [0];
+    for (let i = 0; i <= S; i++) { const a = (i / S) * Math.PI * 2 + 0.35; pts.push({ x: cx + Math.cos(a) * ax, y: cy + Math.sin(a) * ay }); }
+    for (let i = 1; i <= S; i++) acc.push(acc[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+    const total = acc[S], P = [];
+    for (let k = 0, j = 0; k < n; k++) {
+      const target = (k + (rnd() - 0.5) * 0.18) / n * total;
+      while (j < S && acc[j + 1] < target) j++;
+      P.push(pts[Math.max(0, j)]);
+    }
+    const normal = (q) => { const dx = (q.x - cx) / (ax * ax), dy = (q.y - cy) / (ay * ay); const l = Math.hypot(dx, dy) || 1; return { x: dx / l, y: dy / l }; };
+    body.moveTo(P[0].x, P[0].y);
+    for (let k = 0; k < n; k++) {
+      const a = P[k], b = P[(k + 1) % n];
+      const chord = Math.hypot(b.x - a.x, b.y - a.y);
+      const na = normal(a), nb = normal(b);
+      const h = chord * (0.62 + rnd() * 0.12);
+      body.bezierCurveTo(a.x + na.x * h, a.y + na.y * h, b.x + nb.x * h, b.y + nb.y * h, b.x, b.y);
     }
     body.closePath();
   } else {
@@ -836,7 +850,7 @@ function prepScratch(cv, w, h, scale, x0, y0) {
   if (cv.height < h) cv.height = h;
   const sc = cv.getContext('2d');
   sc.setTransform(1, 0, 0, 1, 0, 0);
-  sc.clearRect(0, 0, w, h);
+  sc.clearRect(0, 0, cv.width, cv.height); // whole canvas: smoothing samples neighbouring pixels
   sc.setTransform(scale, 0, 0, scale, -x0 * scale, -y0 * scale);
   return sc;
 }
@@ -1408,6 +1422,7 @@ function updateValueLabels() {
   if (p) $('pZoomVal').textContent = Math.round((p.zoom || 1) * 100) + '%';
   const L = state.layout;
   $('lGapVal').textContent = L.gap;
+  $('lBgOpacityVal').textContent = (L.bgOpacity ?? 100) + '%';
   $('lPadVal').textContent = L.pad;
   $('lBorderVal').textContent = L.border;
   $('lRadiusVal').textContent = L.radius;
@@ -1430,6 +1445,7 @@ function syncLayoutUI() {
   $('lAspect').disabled = L.mode === 'justified';
   $('lFit').value = L.fit;
   $('lBg').value = L.bg;
+  $('lBgOpacity').value = L.bgOpacity ?? 100;
   $('lGap').value = L.gap;
   $('lGapColor').value = L.gapColor;
   $('lPad').value = L.pad;
@@ -1661,7 +1677,8 @@ function movePanel(dir) {
   [state.panels[i], state.panels[j]] = [state.panels[j], state.panels[i]];
   afterPanelsChanged();
 }
-$('pDelBtn').addEventListener('click', () => {
+$('pDelBtn').addEventListener('click', deleteSelectedPanel);
+function deleteSelectedPanel() {
   const p = selPanel(); if (!p) return;
   // elements on this image stay where they are, now attached to the canvas
   if (lastLayout) {
@@ -1674,8 +1691,14 @@ $('pDelBtn').addEventListener('click', () => {
   sel = null;
   if (detailId === p.id) detailId = null;
   afterPanelsChanged();
-});
+}
 $('pReplaceBtn').addEventListener('click', () => $('replaceInput').click());
+$('capStyleBtn').addEventListener('click', () => {
+  $('layoutCard').open = true;
+  const h = $('capHead');
+  h.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  h.classList.remove('flash'); void h.offsetWidth; h.classList.add('flash');
+});
 $('replaceInput').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
@@ -1709,6 +1732,7 @@ bindLayout('lMode', 'mode');
 bindLayout('lAspect', 'aspect');
 bindLayout('lFit', 'fit');
 bindLayout('lBg', 'bg');
+bindLayout('lBgOpacity', 'bgOpacity', num);
 bindLayout('lGap', 'gap', num);
 bindLayout('lGapColor', 'gapColor');
 bindLayout('lPad', 'pad', num);
@@ -2000,10 +2024,19 @@ $('detailExit').addEventListener('click', exitDetail);
 // Side-by-side view & pinned canvas
 // =====================================================================
 const sideMQ = window.matchMedia('(min-width: 900px) and (orientation: landscape)');
-function isSide() { return settings.side === 'always' || (settings.side === 'auto' && sideMQ.matches); }
+function isSide() { return settings.side === 'always' || (settings.side === 'auto' && !!document.fullscreenElement && sideMQ.matches); }
 function applyLayoutMode() {
   const side = isSide();
+  const fs = !!document.fullscreenElement;
   document.body.classList.toggle('side', side);
+  document.body.classList.toggle('fs', fs);
+  // the toolbar sits with the controls on the right in the side-by-side view
+  const tb = $('toolbar');
+  if (side && tb.parentElement !== $('ctrlBlock')) $('ctrlBlock').prepend(tb);
+  if (!side && tb.parentElement !== $('stageBlock')) $('stageBlock').prepend(tb);
+  requestAnimationFrame(() => {
+    document.documentElement.style.setProperty('--sticky-top', fs ? document.querySelector('header').offsetHeight + 'px' : '0px');
+  });
   $('stageBlock').classList.toggle('pinned', !!settings.pin && !side);
   $('pinBtn').classList.toggle('active', !!settings.pin);
   scheduleRender();
@@ -2060,6 +2093,7 @@ document.addEventListener('keydown', (e) => {
     select(null);
     return;
   }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selPanel()) { e.preventDefault(); deleteSelectedPanel(); return; }
   const el = selEl();
   if (!el) return;
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelectedElement(); return; }
@@ -2089,6 +2123,19 @@ async function exportFile() {
   renderTo(cv, { ui: false, full: true });
   const fmt = settings.format;
   const type = 'image/' + fmt;
+  if (fmt === 'jpeg' && (state.layout.bgOpacity ?? 100) < 100) {
+    // JPG has no transparency → put the result on white
+    const flat = document.createElement('canvas');
+    flat.width = cv.width; flat.height = cv.height;
+    const fc = flat.getContext('2d');
+    fc.fillStyle = '#ffffff'; fc.fillRect(0, 0, flat.width, flat.height);
+    fc.drawImage(cv, 0, 0);
+    cv.width = cv.height = 0;
+    return finishExport(flat, fmt, type);
+  }
+  return finishExport(cv, fmt, type);
+}
+async function finishExport(cv, fmt, type) {
   let blob = await new Promise(res => cv.toBlob(res, type, settings.quality / 100));
   let ext = fmt === 'jpeg' ? 'jpg' : fmt;
   if (!blob || blob.type !== type) { // e.g. WebP encoding unsupported (older Safari)
@@ -2446,6 +2493,18 @@ $('setSide').addEventListener('input', () => { settings.side = $('setSide').valu
 $('setSnap').addEventListener('input', () => { settings.snap = $('setSnap').checked; saveSettings(); });
 $('setDownscale').addEventListener('input', () => { settings.downscale = $('setDownscale').checked; saveSettings(); });
 
+$('resetSettingsBtn').addEventListener('click', () => {
+  if (!confirm('Reset all settings (theme, default format & resolution, view options, template source) to their defaults? Your current composition stays.')) return;
+  try { localStorage.removeItem(SETTINGS_KEY); localStorage.removeItem('mememe-theme'); } catch (e) { /* ignore */ }
+  Object.assign(settings, { format: 'png', quality: 90, width: '1080', snap: true, downscale: true, tplSource: 'imgflip', side: 'auto', pin: false });
+  setTheme('dark');
+  $('exFormat').value = settings.format; $('setFormat').value = settings.format; $('exQuality').value = settings.quality;
+  $('setWidth').value = settings.width; $('setSide').value = settings.side;
+  $('setSnap').checked = settings.snap; $('setDownscale').checked = settings.downscale;
+  applyLayoutMode(); updateValueLabels();
+  toast('Settings reset to defaults.');
+});
+
 const brand = $('brand');
 const goHome = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 brand.addEventListener('click', goHome);
@@ -2457,7 +2516,7 @@ fsBtn.addEventListener('click', () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen().catch(() => {});
 });
-document.addEventListener('fullscreenchange', () => { fsBtn.classList.toggle('active', !!document.fullscreenElement); scheduleRender(); });
+document.addEventListener('fullscreenchange', () => { fsBtn.classList.toggle('active', !!document.fullscreenElement); applyLayoutMode(); });
 
 window.addEventListener('beforeunload', (e) => {
   if (hasContent()) { e.preventDefault(); e.returnValue = ''; }

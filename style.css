@@ -165,7 +165,9 @@ details.card[open] > summary { margin-bottom: 10px; }
 .small-txt { font-size: 12px; }
 
 .row { display: flex; align-items: center; gap: 8px; }
-.row + .row, textarea + .row, .row + div, div + .row { margin-top: 10px; }
+.row { margin-top: 10px; }
+.card > .row:first-child, .card > div > .row:first-child, .modal .row:first-of-type { margin-top: 0; }
+.modal h2 + .row { margin-top: 0; }
 label { font-size: 14px; }
 .label-main { font-weight: 600; font-size: 14px; }
 .lbl { font-size: 13px; color: var(--text-secondary); min-width: 74px; flex-shrink: 0; }
@@ -350,3 +352,17 @@ input.hex.bad { border-color: var(--danger); }
 }
 .tpl small { font-size: 10px; color: var(--text-secondary); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .more-btn { width: 100%; margin-top: 8px; flex: none; }
+
+/* ---------- v0.2.1 ---------- */
+body.fs header {
+  position: sticky; top: 0; z-index: 25; background: var(--bg);
+  margin: -16px -16px 4px; padding: 12px 16px 8px;
+}
+#stageBlock.pinned { top: var(--sticky-top, 0px); }
+body.side #stageBlock { top: calc(var(--sticky-top, 0px) + 12px); }
+body.side #canvas { max-height: calc(100vh - 110px - var(--sticky-top, 0px)); }
+body.side #ctrlBlock > .toolbar { margin-bottom: 12px; }
+.btn.danger-outline { width: 100%; background: none; color: var(--danger); border-color: var(--border); flex: none; }
+.flash { animation: flash 1.2s ease-out; }
+@keyframes flash { 0%, 40% { background: var(--accent); color: var(--accent-text); } 100% { background: transparent; } }
+.subhead { border-radius: 4px; }

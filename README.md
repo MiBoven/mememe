@@ -20,7 +20,7 @@ A privacy-friendly web app for making memes, image grids, mosaics, comic pages a
 - Columns: auto or 1–6
 - **Same size cells** (ratio like the first image, 1:1, 4:3, 3:4, 16:9 or 9:16) or **Original ratios (mosaic)**; in same-size mode a panel can span several columns
 - **Resolution:** 720 – 4096 px wide, like the first image, or **all images at original size** — the width is chosen so no image loses pixels. Results above the browser limit (≈16 MP on phones, ≈40 MP on desktop) are scaled down evenly; the result size is shown above the download button
-- Background color for letterboxed images and empty areas
+- Background color and opacity (transparent backgrounds for PNG / WebP; JPG gets white) for letterboxed images and empty areas
 
 ### Frame & spacing
 - Lines **between the images** and an **outer frame**, each with its own color and width
@@ -31,8 +31,8 @@ A privacy-friendly web app for making memes, image grids, mosaics, comic pages a
 - Styles 1 2 3 / A B C / a b c / I II III, size and colors; *More options:* circle / rounded square / text only, font, border, position (3×3) and distance to the edge
 - Per image: own label (e.g. "1a"), own colors or hidden; numbering continues automatically after reordering
 
-### Captions & subtitles
-- One caption per panel, styled globally: on the image (bottom like a movie subtitle, or top like a comic narration box) or as a bar above / below the image
+### Captions
+- One caption per panel (⚙ next to the caption field jumps to the caption style), styled globally: on the image (bottom like a movie subtitle, or top like a comic narration box) or as a bar above / below the image
 - Font, size, color; *More caption options:* outline, background box (color & opacity), alignment, bold / italic / UPPERCASE
 - Caption and number sizes are relative to one column, so they stay readable in big grids
 
@@ -61,15 +61,15 @@ A privacy-friendly web app for making memes, image grids, mosaics, comic pages a
 - Images can also be added from any `https://` address (works only if that site allows it via CORS)
 
 ### Editing & export
-- Undo / redo (40 steps), keyboard shortcuts: Ctrl/Cmd+Z, Ctrl/Cmd+Y or Shift+Ctrl/Cmd+Z, Delete, arrow keys (Shift = 10 px), Esc
+- Undo / redo (40 steps), keyboard shortcuts: Ctrl/Cmd+Z, Ctrl/Cmd+Y or Shift+Ctrl/Cmd+Z, Delete (selected text, bubble, image or blank panel), arrow keys (Shift = 10 px), Esc
 - Clicking outside the canvas and the editing controls deselects everything
-- Click a setting's label to reset it to its default; every control has a tooltip
+- Click a setting's label to reset it to its default; every control has a tooltip; *Settings → Reset all settings…* restores factory defaults
 - Export as PNG, JPG or WebP (quality slider); falls back to PNG if a format isn't supported. File name: `mememe_YYYYMMDD_HHMMSS.ext`
 - **Share…** button on devices that support sharing files
 - Warning before an accidental reload discards your work
 
 ### General
-- Side-by-side view on wide landscape screens: canvas fixed on the left, settings on the right (Auto / Always / Never in Settings)
+- Side-by-side view: canvas fixed on the left, toolbar and settings on the right (Auto = in fullscreen on wide screens / Always / Never in Settings); in fullscreen the header stays at the top
 - 📌 pins the canvas to the top while scrolling the settings (portrait)
 - Rarely used settings are tucked away under *More options*; Layout, Frame & spacing and Numbering start collapsed
 - Dark mode by default, light mode via the menu; Settings and About in the menu; fullscreen toggle

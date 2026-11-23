@@ -233,7 +233,8 @@
     <input type="file" id="replaceInput" accept="image/*">
     <div class="row">
       <label class="lbl">Caption</label>
-      <textarea id="pCaption" rows="1" placeholder="Caption / subtitle (optional)" title="Caption or subtitle — its look is set under Layout → Captions"></textarea>
+      <textarea id="pCaption" rows="1" placeholder="Caption (optional)" title="Caption text for this image — its look is set under Layout → Captions"></textarea>
+      <button type="button" class="icon small" id="capStyleBtn" title="Caption style: position, font, size, colors (Layout → Captions)">⚙</button>
     </div>
     <div class="row" id="pColorRow">
       <label class="lbl">Color</label>
@@ -343,15 +344,19 @@
       <option value="contain">Fit (letterbox)</option>
       <option value="stretch">Stretch</option>
     </select>
-    <label class="lbl short">Bg</label>
+  </div>
+  <div class="row">
+    <label class="lbl">Background</label>
     <input type="color" id="lBg" title="Background color (visible behind letterboxed images and empty areas)">
+    <input type="range" id="lBgOpacity" min="0" max="100" title="Background opacity — 0 % is transparent (PNG / WebP; JPG gets white)">
+    <span class="val" id="lBgOpacityVal"></span>
   </div>
 
-  <div class="subhead">Captions &amp; subtitles</div>
+  <div class="subhead" id="capHead">Captions</div>
   <div class="row">
     <label class="lbl">Position</label>
     <select id="cPos" title="Where the per-image caption goes">
-      <option value="overlayBottom">On image, bottom (subtitle)</option>
+      <option value="overlayBottom">On image, bottom (like a movie subtitle)</option>
       <option value="overlayTop">On image, top</option>
       <option value="below">Bar below image</option>
       <option value="above">Bar above image</option>
@@ -578,7 +583,7 @@
     <div class="row">
       <label class="lbl wide">Side-by-side view</label>
       <select id="setSide" title="Canvas on the left, settings on the right">
-        <option value="auto">Auto (wide landscape screens)</option>
+        <option value="auto">Auto (fullscreen on wide screens)</option>
         <option value="always">Always</option>
         <option value="never">Never</option>
       </select>
@@ -592,6 +597,8 @@
       <input type="checkbox" id="setDownscale">
     </div>
     <p class="muted small-txt">Tip: click a setting's label in the editor to reset it to its default.</p>
+    <div class="subhead">Reset</div>
+    <button type="button" class="btn danger-outline" id="resetSettingsBtn" title="Restore all settings of this page (theme, defaults, view options) to factory values">Reset all settings…</button>
     <button class="close" data-close="settingsModal">Close</button>
   </div>
 </div>
