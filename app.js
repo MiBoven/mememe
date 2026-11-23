@@ -3,7 +3,7 @@
  * Client-side meme / grid / comic composer. Everything is drawn on a <canvas>;
  * nothing is uploaded. */
 
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.5.0';
 const $ = (id) => document.getElementById(id);
 const isCoarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
 
@@ -98,6 +98,11 @@ const BUBBLE_DEFAULTS = {
 };
 const PICTURE_DEFAULTS = { opacity: 100, rot: 0, flip: false, clip: false, pin: 'auto', margin: 30 };
 const DRAW_DEFAULTS = { opacity: 100, rot: 0, clip: false, pin: 'auto', margin: 30 };
+const SHAPE_DEFAULTS = {
+  opacity: 100, rot: 0, clip: false, pin: 'auto', margin: 30,
+  fillOn: false, fill: '#ffffff', fillOpacity: 100, stroke: '#e53935', strokeW: 8, dash: false, radius: 0, heads: 'end'
+};
+const FILTER_DEFAULT = { b: 100, c: 100, s: 100, g: 0, se: 0, bl: 0, fried: false };
 const PANEL_DEFAULTS = {
   fit: '', zoom: 1, offX: 0, offY: 0, span: 1, color: '#ffffff', caption: '', flip: false,
   numText: '', numHide: false, numOwn: false, numColor: '#ffffff', numBg: '#e53935', rot: 0, straight: 0, weight: 1
@@ -117,10 +122,10 @@ let guides = { x: null, y: null };
 
 // Style of the last edited text / bubble, used for the next new one.
 const lastStyle = { text: null, bubble: null };
-const STYLE_KEYS = ['font', 'size', 'color', 'stroke', 'strokeW', 'bgOn', 'bg', 'bgOpacity', 'align', 'bold', 'italic', 'upper', 'shadow',
+const STYLE_KEYS = ['font', 'size', 'color', 'stroke', 'strokeW', 'bgOn', 'bg', 'bgOpacity', 'align', 'bold', 'italic', 'upper', 'shadow', 'fillOn', 'dash',
   'shape', 'fill', 'fillOpacity', 'border', 'borderW'];
 // Keys measured in "frame units" — rescaled when an element moves to a differently sized image.
-const SCALE_KEYS = ['size', 'w', 'h', 'strokeW', 'borderW', 'margin', 's'];
+const SCALE_KEYS = ['size', 'w', 'h', 'strokeW', 'borderW', 'margin', 's', 'dx', 'dy'];
 
 let idCounter = 0;
 function uid() { return (Date.now().toString(36) + (idCounter++).toString(36) + Math.random().toString(36).slice(2, 5)); }
@@ -578,7 +583,8 @@ function drawComposition(c, lay, scale, withUI) {
     if (el.type === 'text') drawTextEl(c, el, fr);
     else if (el.type === 'bubble') drawBubbleEl(c, el, fr, lay, scale);
     else if (el.type === 'picture') drawPictureEl(c, el, fr);
-    else if (el.type === 'draw') drawDrawEl(c, el, fr);
+    else if (el.type === 'draw') drawDrawEl(c, el, fr, scale);
+    else if (el.type === 'shape') drawShapeEl(c, el, fr);
     c.restore();
   });
   if (withUI) drawSelection(c, lay);
@@ -623,7 +629,7 @@ function drawPanel(c, cell, lay) {
       const ang = ((p.rot || 0) + (p.straight || 0)) * Math.PI / 180;
       c.translate(x + w / 2 + ox, y + h / 2 + oy);
       if (p.flip) { c.scale(-1, 1); c.rotate(-ang); } else c.rotate(ang);
-      c.drawImage(im.src, -dw0 / 2, -dh0 / 2, dw0, dh0);
+      c.drawImage(drawableFor(p.imgId, p.filter) || im.src, -dw0 / 2, -dh0 / 2, dw0, dh0);
     } else {
       c.fillStyle = '#888';
       c.fillRect(x, y, w, h);
@@ -974,7 +980,7 @@ function drawPictureEl(c, el, fr) {
   c.translate(g.cx, g.cy);
   c.rotate(g.rot);
   if (el.flip) c.scale(-1, 1);
-  c.drawImage(im.src, -g.w / 2, -g.h / 2, g.w, g.h);
+  c.drawImage(drawableFor(el.imgId, el.filter) || im.src, -g.w / 2, -g.h / 2, g.w, g.h);
 }
 
 // ---------- Freehand drawings ----------
@@ -984,6 +990,7 @@ function drawGeom(el, fr) {
   const k = fr.w * (el.s || 1);
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   (el.strokes || []).forEach(st => {
+    if (st.kind === 'eraser') return;
     const r = st.size / 2, p = st.pts;
     for (let i = 0; i < p.length; i += 2) {
       x0 = Math.min(x0, p[i] - r); x1 = Math.max(x1, p[i] + r);
@@ -994,7 +1001,7 @@ function drawGeom(el, fr) {
   const ox = fr.x + el.x * fr.w, oy = fr.y + el.y * fr.h, rot = (el.rot || 0) * Math.PI / 180;
   const mx = (x0 + x1) / 2 * k, my = (y0 + y1) / 2 * k;
   return {
-    type: 'draw', w: Math.max(8, (x1 - x0) * k), h: Math.max(8, (y1 - y0) * k), k, ox, oy, rot, frame: fr,
+    type: 'draw', w: Math.max(8, (x1 - x0) * k), h: Math.max(8, (y1 - y0) * k), k, ox, oy, rot, frame: fr, lx0: x0, ly0: y0, lx1: x1, ly1: y1,
     cx: ox + mx * Math.cos(rot) - my * Math.sin(rot), cy: oy + mx * Math.sin(rot) + my * Math.cos(rot)
   };
 }
@@ -1019,15 +1026,218 @@ function strokePath(c, st, k) {
   c.stroke();
   c.restore();
 }
-function drawDrawEl(c, el, fr) {
+// Each drawing is painted on its own layer, so the eraser (destination-out)
+// only removes paint of that drawing and never the image below.
+const scratchDraw = document.createElement('canvas');
+function drawDrawEl(c, el, fr, scale) {
   const g = drawGeom(el, fr);
   geo.set(el.id, g);
+  if (!(el.strokes || []).some(st => st.kind !== 'eraser')) return;
+  const k = g.k;
+  const lw = (g.lx1 - g.lx0) * k, lh = (g.ly1 - g.ly0) * k;
+  let sc = scale || 1;
+  if (lw * lh * sc * sc > 12000000) sc = Math.sqrt(12000000 / (lw * lh));
+  const sw = Math.max(1, Math.ceil(lw * sc)), sh = Math.max(1, Math.ceil(lh * sc));
+  if (scratchDraw.width < sw) scratchDraw.width = sw;
+  if (scratchDraw.height < sh) scratchDraw.height = sh;
+  const lc = scratchDraw.getContext('2d');
+  lc.setTransform(1, 0, 0, 1, 0, 0);
+  lc.globalCompositeOperation = 'source-over';
+  lc.globalAlpha = 1;
+  lc.clearRect(0, 0, scratchDraw.width, scratchDraw.height);
+  lc.setTransform(sc, 0, 0, sc, -g.lx0 * k * sc, -g.ly0 * k * sc);
+  el.strokes.forEach(st => {
+    lc.globalCompositeOperation = st.kind === 'eraser' ? 'destination-out' : 'source-over';
+    strokePath(lc, st.kind === 'eraser' ? Object.assign({}, st, { alpha: 1, color: '#000' }) : st, k);
+  });
+  lc.globalCompositeOperation = 'source-over';
   c.translate(g.ox, g.oy);
   c.rotate(g.rot);
-  (el.strokes || []).forEach(st => strokePath(c, st, g.k));
+  c.drawImage(scratchDraw, 0, 0, sw, sh, g.lx0 * k, g.ly0 * k, sw / sc, sh / sc);
 }
 
-// ---------- Selection overlay ----------
+// ---------- Shapes ----------
+const LINE_KINDS = ['line', 'arrow'];
+function shapeGeom(el, fr) {
+  const sp = (el.strokeW || 0) * fr.w / 1000;
+  const cx = fr.x + el.x * fr.w, cy = fr.y + el.y * fr.h;
+  if (LINE_KINDS.includes(el.kind)) {
+    const vx = (el.dx || 0) * fr.w, vy = (el.dy || 0) * fr.w;
+    const len = Math.max(2, Math.hypot(vx, vy) * 2);
+    return { type: 'shape', line: true, cx, cy, w: len, h: Math.max(sp * 2.5, 22 * dispScale()), rot: Math.atan2(vy, vx), sp, frame: fr,
+      e1: { x: cx - vx, y: cy - vy }, e2: { x: cx + vx, y: cy + vy } };
+  }
+  return { type: 'shape', cx, cy, w: Math.max(4, el.w * fr.w), h: Math.max(4, el.h * fr.w), rot: (el.rot || 0) * Math.PI / 180, sp, frame: fr };
+}
+function arrowHead(c, tip, from, size) {
+  const a = Math.atan2(tip.y - from.y, tip.x - from.x);
+  c.beginPath();
+  c.moveTo(tip.x, tip.y);
+  c.lineTo(tip.x - size * Math.cos(a - 0.45), tip.y - size * Math.sin(a - 0.45));
+  c.lineTo(tip.x - size * Math.cos(a + 0.45), tip.y - size * Math.sin(a + 0.45));
+  c.closePath();
+  c.fill();
+}
+function drawShapeEl(c, el, fr) {
+  const g = shapeGeom(el, fr);
+  geo.set(el.id, g);
+  const sp = g.sp;
+  c.lineJoin = 'round';
+  if (el.dash && sp > 0) c.setLineDash([sp * 3, sp * 2]);
+  if (g.line) {
+    if (sp <= 0) return;
+    const heads = el.kind === 'arrow' ? (el.heads || 'end') : (el.heads === 'end' || el.heads === 'start' || el.heads === 'both' ? el.heads : 'none');
+    const hs = Math.max(sp * 4, 12);
+    let a = g.e1, b = g.e2;
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1, ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+    const cut = hs * 0.7;
+    const a2 = (heads === 'start' || heads === 'both') ? { x: a.x + ux * cut, y: a.y + uy * cut } : a;
+    const b2 = (heads === 'end' || heads === 'both') ? { x: b.x - ux * cut, y: b.y - uy * cut } : b;
+    c.strokeStyle = el.stroke;
+    c.lineWidth = sp;
+    c.lineCap = 'round';
+    c.beginPath(); c.moveTo(a2.x, a2.y); c.lineTo(b2.x, b2.y); c.stroke();
+    c.setLineDash([]);
+    c.fillStyle = el.stroke;
+    if (heads === 'end' || heads === 'both') arrowHead(c, b, a, hs);
+    if (heads === 'start' || heads === 'both') arrowHead(c, a, b, hs);
+    return;
+  }
+  c.translate(g.cx, g.cy);
+  c.rotate(g.rot);
+  const w = g.w, h = g.h;
+  const path = new Path2D();
+  if (el.kind === 'ellipse') path.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
+  else roundRectPath2D(path, -w / 2, -h / 2, w, h, (el.radius || 0) / 100 * Math.min(w, h) / 2);
+  if (el.fillOn) {
+    const ea = c.globalAlpha;
+    c.globalAlpha = ea * clamp((el.fillOpacity ?? 100) / 100, 0, 1);
+    c.fillStyle = el.fill;
+    c.fill(path);
+    c.globalAlpha = ea;
+  }
+  if (sp > 0) { c.strokeStyle = el.stroke; c.lineWidth = sp; c.stroke(path); }
+}
+
+// ---------- Filters (cached filtered copies of images) ----------
+const CANVAS_FILTER = (() => {
+  try { const c = document.createElement('canvas').getContext('2d'); c.filter = 'blur(2px)'; return c.filter === 'blur(2px)'; } catch (e) { return false; }
+})();
+const fcache = new Map();   // key -> { src, used }
+const fqueue = new Map();   // imgId -> { running, next }
+let showOriginal = false;
+function filterActive(f) { return !!f && (f.b !== 100 || f.c !== 100 || f.s !== 100 || f.g > 0 || f.se > 0 || f.bl > 0 || !!f.fried); }
+function filterKey(f) { return [f.b, f.c, f.s, f.g, f.se, f.bl, f.fried ? 1 : 0].join(','); }
+function drawableFor(imgId, f) {
+  const im = images.get(imgId);
+  if (!im) return null;
+  if (showOriginal || !filterActive(f)) return im.src;
+  const hit = fcache.get(imgId + '|' + filterKey(f));
+  if (hit) { hit.used = Date.now(); return hit.src; }
+  buildFiltered(imgId, f);
+  const last = fcache.get('last|' + imgId); // show the previous result while the new one is made
+  return last ? last.src : im.src;
+}
+function buildFiltered(imgId, f) {
+  let q = fqueue.get(imgId);
+  if (!q) { q = { running: false, next: null }; fqueue.set(imgId, q); }
+  q.next = Object.assign({}, f);
+  if (!q.running) runFilterQueue(imgId, q);
+}
+async function runFilterQueue(imgId, q) {
+  q.running = true;
+  while (q.next) {
+    const f = q.next;
+    q.next = null;
+    const key = imgId + '|' + filterKey(f);
+    if (!fcache.has(key)) {
+      try {
+        const src = await makeFiltered(imgId, f);
+        const e = { src, used: Date.now() };
+        fcache.set(key, e);
+        fcache.set('last|' + imgId, e);
+        pruneFilterCache();
+      } catch (err) { /* keep the unfiltered image */ }
+    }
+    scheduleRender();
+  }
+  q.running = false;
+}
+function pruneFilterCache() {
+  const entries = [...fcache.entries()].filter(([k]) => !k.startsWith('last|')).sort((a, b) => a[1].used - b[1].used);
+  while (entries.length > 14) fcache.delete(entries.shift()[0]);
+}
+async function ensureFiltersReady() {
+  const jobs = [];
+  const need = (id, f) => {
+    if (!id || !images.get(id) || !filterActive(f)) return;
+    const key = id + '|' + filterKey(f);
+    if (!fcache.has(key)) jobs.push(makeFiltered(id, f).then(src => fcache.set(key, { src, used: Date.now() })).catch(() => {}));
+  };
+  state.panels.forEach(p => need(p.imgId, p.filter));
+  state.elements.forEach(e => { if (e.type === 'picture') need(e.imgId, e.filter); });
+  await Promise.all(jobs);
+}
+// Pixel fallback for browsers without canvas filters (older Safari).
+function applyPixels(a, br, ct, sat, gray, sep) {
+  for (let i = 0; i < a.length; i += 4) {
+    let r = a[i] * br, g = a[i + 1] * br, b = a[i + 2] * br;
+    r = (r - 128) * ct + 128; g = (g - 128) * ct + 128; b = (b - 128) * ct + 128;
+    const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    r = l + (r - l) * sat; g = l + (g - l) * sat; b = l + (b - l) * sat;
+    if (gray > 0) { const l2 = 0.2126 * r + 0.7152 * g + 0.0722 * b; r += (l2 - r) * gray; g += (l2 - g) * gray; b += (l2 - b) * gray; }
+    if (sep > 0) {
+      const sr = 0.393 * r + 0.769 * g + 0.189 * b, sg = 0.349 * r + 0.686 * g + 0.168 * b, sb = 0.272 * r + 0.534 * g + 0.131 * b;
+      r += (sr - r) * sep; g += (sg - g) * sep; b += (sb - b) * sep;
+    }
+    a[i] = r; a[i + 1] = g; a[i + 2] = b; // Uint8ClampedArray clamps
+  }
+}
+async function makeFiltered(imgId, f) {
+  const im = images.get(imgId);
+  const maxS = f.fried ? 1400 : 4096;
+  const k = Math.min(1, maxS / Math.max(im.w, im.h));
+  const w = Math.max(1, Math.round(im.w * k)), h = Math.max(1, Math.round(im.h * k));
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const c = cv.getContext('2d');
+  let br = f.b, ct = f.c, sat = f.s;
+  if (f.fried) { br *= 1.08; ct *= 1.7; sat *= 2.6; }
+  const blurPx = f.bl * w / 1000;
+  if (CANVAS_FILTER) {
+    c.filter = `brightness(${br}%) contrast(${ct}%) saturate(${sat}%) grayscale(${f.g}%) sepia(${f.se}%)` + (blurPx > 0 ? ` blur(${blurPx.toFixed(2)}px)` : '');
+    c.drawImage(im.src, 0, 0, w, h);
+    c.filter = 'none';
+  } else {
+    if (blurPx > 0.5) { // cheap blur: shrink, then scale back up
+      const t = document.createElement('canvas');
+      t.width = Math.max(1, Math.round(w / blurPx)); t.height = Math.max(1, Math.round(h / blurPx));
+      t.getContext('2d').drawImage(im.src, 0, 0, t.width, t.height);
+      c.imageSmoothingQuality = 'high';
+      c.drawImage(t, 0, 0, w, h);
+    } else c.drawImage(im.src, 0, 0, w, h);
+    const d = c.getImageData(0, 0, w, h);
+    applyPixels(d.data, br / 100, ct / 100, sat / 100, f.g / 100, f.se / 100);
+    c.putImageData(d, 0, 0);
+  }
+  if (f.fried) {
+    // grain + JPEG crunch, the classic "deep fried" look
+    const d = c.getImageData(0, 0, w, h), a = d.data;
+    for (let i = 0; i < a.length; i += 4) { const n = (Math.random() - 0.5) * 46; a[i] += n; a[i + 1] += n * 0.8; a[i + 2] += n * 0.6; }
+    c.putImageData(d, 0, 0);
+    for (let i = 0; i < 2; i++) {
+      const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.1));
+      if (!blob) break;
+      const dec = await decodeBlob(blob);
+      c.clearRect(0, 0, w, h);
+      c.drawImage(dec.src, 0, 0, w, h);
+      if (dec.src.close) dec.src.close();
+    }
+  }
+  return cv;
+}
+
+// ---------- Selection overlay ----------// ---------- Selection overlay ----------
 function drawSelection(c, lay) {
   const ds = dispScale();
   const accent = '#4f8cff';
@@ -1054,6 +1264,15 @@ function drawSelection(c, lay) {
         c.restore();
       }
       const hs = 9 * ds;
+      if (g.line) {
+        c.setLineDash([]);
+        [g.e1, g.e2].forEach(pt => {
+          c.beginPath(); c.arc(pt.x, pt.y, 10 * ds, 0, Math.PI * 2);
+          c.fillStyle = accent; c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 2 * ds; c.stroke();
+        });
+        c.restore();
+        return;
+      }
       c.save();
       c.translate(g.cx, g.cy);
       c.rotate(g.rot);
@@ -1113,6 +1332,7 @@ function geomFor(el, fr) {
   if (el.type === 'bubble') return bubbleGeom(ctx, el, fr);
   if (el.type === 'picture') return pictureGeom(el, fr);
   if (el.type === 'draw') return drawGeom(el, fr);
+  if (el.type === 'shape') return shapeGeom(el, fr);
   return textGeom(ctx, el, fr);
 }
 function alignElement(el, a, lay) {
@@ -1475,11 +1695,28 @@ function syncProps() {
   $('propsElement').hidden = !el || dr;
   $('propsPanel').hidden = !p || dr;
   if (el) {
-    const t = el.type, isB = t === 'bubble', isT = t === 'text', isP = t === 'picture', isD = t === 'draw';
-    const name = isB ? 'Speech bubble' : isP ? 'Picture' : isD ? 'Drawing' : el.font === 'emoji' ? 'Emoji' : 'Text';
+    const t = el.type, isB = t === 'bubble', isT = t === 'text', isP = t === 'picture', isD = t === 'draw', isS = t === 'shape';
+    const isLine = isS && LINE_KINDS.includes(el.kind);
+    const name = isB ? 'Speech bubble' : isP ? 'Picture' : isD ? 'Drawing' : isS ? { rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow' }[el.kind] : el.font === 'emoji' ? 'Emoji' : 'Text';
     $('elTitle').textContent = name + (el.panelId ? ` · image ${state.panels.findIndex(q => q.id === el.panelId) + 1}` : ' · canvas');
-    $('elText').hidden = isP || isD;
-    $('textRows').hidden = isP || isD;
+    $('elText').hidden = isP || isD || isS;
+    $('textRows').hidden = isP || isD || isS;
+    $('shapeOnly').hidden = !isS;
+    if (isS) {
+      $('shKind').value = el.kind;
+      $('shFillRow').hidden = isLine;
+      $('shFillOn').checked = !!el.fillOn;
+      $('shFill').value = el.fill;
+      $('shFillOpacity').value = el.fillOpacity ?? 100;
+      $('shStroke').value = el.stroke;
+      $('shStrokeW').value = Math.round(el.strokeW || 0);
+      $('shDash').checked = !!el.dash;
+      $('shRadius').value = el.radius || 0;
+      $('shRadiusWrap').hidden = el.kind !== 'rect';
+      $('shHeads').hidden = !isLine;
+      $('shHeads').value = el.heads || 'none';
+      $('shLineHint').hidden = !isLine;
+    }
     $('pictureRows').hidden = !(isP || isD);
     $('picOnly').hidden = !isP;
     $('drawOnly').hidden = !isD;
@@ -1487,8 +1724,9 @@ function syncProps() {
     $('textBgRow').hidden = !isT;
     $('autoHRow').hidden = !isB;
     $('fitRow').hidden = !(isT || isB);
+    $('elAdv').hidden = isLine;
     $('shadowRow').hidden = !(isT || isB);
-    $('rotRow').hidden = isB;
+    $('rotRow').hidden = isB || isLine;
     $('elOpacity').value = el.opacity ?? 100;
     $('elRot').value = Math.round(el.rot || 0);
     $('elMargin').value = Math.round(el.margin ?? 30);
@@ -1563,12 +1801,17 @@ function syncProps() {
     }
   }
   updateValueLabels();
+  syncFilterUI();
 }
 function updateValueLabels() {
   const el = selEl();
   if (el) {
     $('elOpacityVal').textContent = Math.round(el.opacity ?? 100) + '%';
     $('elRotVal').textContent = Math.round(el.rot || 0) + '°';
+  }
+  if (el && el.type === 'shape') {
+    $('shFillOpacityVal').textContent = Math.round(el.fillOpacity ?? 100) + '%';
+    $('shStrokeWVal').textContent = Math.round(el.strokeW || 0);
   }
   if (el && (el.type === 'text' || el.type === 'bubble')) {
     $('elSizeVal').textContent = Math.round(el.size);
@@ -1657,10 +1900,10 @@ const SEG_RESETS = {};  // seg id -> () => void
 
 // ---------- bind element inputs ----------
 function rememberStyle(el) {
-  if ((el.type !== 'text' && el.type !== 'bubble') || el.font === 'emoji') return;
+  if ((el.type !== 'text' && el.type !== 'bubble' && el.type !== 'shape') || el.font === 'emoji') return;
   lastStyle[el.type] = pickStyle(el);
 }
-function elDefaults(el) { return { bubble: BUBBLE_DEFAULTS, picture: PICTURE_DEFAULTS, draw: DRAW_DEFAULTS }[el.type] || TEXT_DEFAULTS; }
+function elDefaults(el) { return { bubble: BUBBLE_DEFAULTS, picture: PICTURE_DEFAULTS, draw: DRAW_DEFAULTS, shape: SHAPE_DEFAULTS }[el.type] || TEXT_DEFAULTS; }
 function bindEl(id, key, conv) {
   const inp = $(id);
   const read = () => (inp.type === 'checkbox' ? inp.checked : conv ? conv(inp.value) : inp.value);
@@ -1771,6 +2014,101 @@ function moveElementTo(front) {
 }
 $('picFlipBtn').addEventListener('click', () => { const el = selEl(); if (!el || el.type !== 'picture') return; el.flip = !el.flip; commit(); scheduleRender(); });
 $('picReplaceBtn').addEventListener('click', () => $('picReplaceInput').click());
+
+// ---------- shapes ----------
+bindEl('shFillOn', 'fillOn');
+bindEl('shFill', 'fill');
+bindEl('shFillOpacity', 'fillOpacity', num);
+bindEl('shStroke', 'stroke');
+bindEl('shStrokeW', 'strokeW', num);
+bindEl('shDash', 'dash');
+bindEl('shRadius', 'radius', num);
+bindEl('shHeads', 'heads');
+$('shKind').addEventListener('input', () => {
+  const el = selEl(); if (!el || el.type !== 'shape' || !lastLayout) return;
+  const g = geo.get(el.id);
+  const wasLine = LINE_KINDS.includes(el.kind);
+  el.kind = $('shKind').value;
+  const isLine = LINE_KINDS.includes(el.kind);
+  if (g && wasLine !== isLine) {
+    const fw = g.frame.w;
+    if (isLine) { el.dx = g.w / 2 / fw; el.dy = 0; } else { el.w = Math.max(0.05, g.w / fw); el.h = Math.max(0.05, el.w * 0.6); }
+  }
+  if (el.kind === 'arrow' && (!el.heads || el.heads === 'none')) el.heads = 'end';
+  if (el.kind === 'line' && wasLine === false) el.heads = 'none';
+  commit(); syncProps(); scheduleRender();
+});
+function newShape(kind) {
+  const fr = insertionFrame();
+  return Object.assign({ id: uid(), type: 'shape', kind, panelId: fr.canvas ? null : fr.p.id, x: 0.5, y: 0.5, w: 0.5, h: 0.32, dx: 0.25, dy: 0 },
+    JSON.parse(JSON.stringify(SHAPE_DEFAULTS)), pickStyle(lastStyle.shape), { heads: kind === 'arrow' ? 'end' : 'none' });
+}
+$('addShapeBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const m = $('shapeMenu');
+  m.style.display = m.style.display === 'none' ? 'block' : 'none';
+});
+$('shapeMenu').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-shape]'); if (!b) return;
+  $('shapeMenu').style.display = 'none';
+  addElement(newShape(b.dataset.shape));
+});
+document.addEventListener('click', (e) => { if (!$('shapeWrap').contains(e.target)) $('shapeMenu').style.display = 'none'; });
+
+// ---------- filters UI (image panels & pictures) ----------
+const FILTER_INPUTS = [['fBright', 'b', '%'], ['fContrast', 'c', '%'], ['fSat', 's', '%'], ['fGray', 'g', '%'], ['fSepia', 'se', '%'], ['fBlur', 'bl', '']];
+const FILTER_PRESETS = [
+  ['None', {}], ['B & W', { g: 100, c: 110 }], ['Noir', { g: 100, c: 165, b: 90 }], ['Sepia', { se: 90, c: 105 }],
+  ['Vivid', { s: 165, c: 118 }], ['Faded', { c: 78, s: 65, b: 112 }], ['Dreamy', { bl: 4, b: 110, s: 120 }], ['Deep fried 🔥', { fried: true }]
+];
+function filterTarget() {
+  const p = selPanel();
+  if (p && p.type === 'image') return p;
+  const el = selEl();
+  return el && el.type === 'picture' ? el : null;
+}
+function syncFilterUI() {
+  const t = filterTarget();
+  $('filterCard').hidden = !t || (typeof drawState !== 'undefined' && drawState.on);
+  if (!t) return;
+  const f = Object.assign({}, FILTER_DEFAULT, t.filter || {});
+  FILTER_INPUTS.forEach(([id, k, unit]) => { $(id).value = f[k]; $(id + 'Val').textContent = f[k] + unit; });
+  $('fFried').checked = !!f.fried;
+  $('filterCard').querySelector('summary').textContent = 'Filters' + (filterActive(t.filter) ? ' ●' : '');
+}
+FILTER_INPUTS.forEach(([id, k]) => {
+  $(id).addEventListener('input', () => {
+    const t = filterTarget(); if (!t) return;
+    t.filter = Object.assign({}, FILTER_DEFAULT, t.filter || {}, { [k]: Number($(id).value) });
+    syncFilterUI(); scheduleRender();
+  });
+  $(id).addEventListener('change', commit);
+  RESETS[id] = () => FILTER_DEFAULT[k];
+});
+$('fFried').addEventListener('input', () => {
+  const t = filterTarget(); if (!t) return;
+  t.filter = Object.assign({}, FILTER_DEFAULT, t.filter || {}, { fried: $('fFried').checked });
+  syncFilterUI(); commit(); scheduleRender();
+});
+RESETS.fFried = () => false;
+FILTER_PRESETS.forEach(([label, f]) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = label;
+  b.addEventListener('click', () => {
+    const t = filterTarget(); if (!t) return;
+    t.filter = label === 'None' ? null : Object.assign({}, FILTER_DEFAULT, f);
+    syncFilterUI(); commit(); scheduleRender();
+  });
+  $('filterPresets').appendChild(b);
+});
+$('fReset').addEventListener('click', () => { const t = filterTarget(); if (!t) return; t.filter = null; syncFilterUI(); commit(); scheduleRender(); });
+const cmp = $('fCompare');
+const cmpOn = (e) => { e.preventDefault(); showOriginal = true; cmp.classList.add('active'); scheduleRender(); };
+const cmpOff = () => { if (!showOriginal) return; showOriginal = false; cmp.classList.remove('active'); scheduleRender(); };
+cmp.addEventListener('pointerdown', cmpOn);
+['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => cmp.addEventListener(ev, cmpOff));
+cmp.addEventListener('contextmenu', (e) => e.preventDefault());
 $('picReplaceInput').addEventListener('change', async (e) => {
   const file = e.target.files[0]; e.target.value = '';
   const el = selEl();
@@ -2091,8 +2429,13 @@ function hitTest(p) {
     const g = geo.get(el.id);
     if (g) {
       if (el.type === 'bubble' && el.tail && Math.hypot(p.x - g.tipX, p.y - g.tipY) < hr) return { kind: 'tail', el };
-      const lp = localPoint(g, p);
-      if (Math.abs(lp.x - g.w / 2) < hr && Math.abs(lp.y - g.h / 2) < hr) return { kind: 'resize', el };
+      if (g.line) {
+        if (Math.hypot(p.x - g.e2.x, p.y - g.e2.y) < hr) return { kind: 'end2', el };
+        if (Math.hypot(p.x - g.e1.x, p.y - g.e1.y) < hr) return { kind: 'end1', el };
+      } else {
+        const lp = localPoint(g, p);
+        if (Math.abs(lp.x - g.w / 2) < hr && Math.abs(lp.y - g.h / 2) < hr) return { kind: 'resize', el };
+      }
     }
   }
   for (let i = state.elements.length - 1; i >= 0; i--) {
@@ -2162,7 +2505,10 @@ canvas.addEventListener('pointerdown', (e) => {
   const now = Date.now();
   if (!hit) { select(null); return; }
   const copyScale = (el) => { const o = {}; SCALE_KEYS.forEach(k => { o[k] = el[k]; }); return o; };
-  if (hit.kind === 'tail' || hit.kind === 'resize') {
+  if (hit.kind === 'end1' || hit.kind === 'end2') {
+    const g = geo.get(hit.el.id);
+    drag = { mode: hit.kind, el: hit.el, start: p, moved: false, fixed: hit.kind === 'end2' ? g.e1 : g.e2 };
+  } else if (hit.kind === 'tail' || hit.kind === 'resize') {
     drag = { mode: hit.kind, el: hit.el, start: p, moved: false, o: copyScale(hit.el), g0: Object.assign({}, geo.get(hit.el.id)) };
   } else if (hit.kind === 'el') {
     const el = hit.el;
@@ -2235,6 +2581,9 @@ canvas.addEventListener('pointermove', (e) => {
     if (el.type === 'picture') {
       const a = g.w / g.h;
       el.w = clamp(Math.max(Math.abs(lp.x) * 2, Math.abs(lp.y) * 2 * a) / fw, 0.02, 6);
+    } else if (el.type === 'shape') {
+      el.w = clamp(Math.abs(lp.x) * 2 / fw, 0.01, 6);
+      el.h = clamp(Math.abs(lp.y) * 2 / fw, 0.01, 6);
     } else if (el.type === 'draw') {
       const g0 = drag.g0;
       const f = Math.max(Math.abs(lp.x) / (g0.w / 2), Math.abs(lp.y) / (g0.h / 2));
@@ -2249,6 +2598,18 @@ canvas.addEventListener('pointermove', (e) => {
         el.h = clamp(Math.abs(lp.y) * 2 / fw, 0.02, 4);
       }
     }
+  } else if (drag.mode === 'end1' || drag.mode === 'end2') {
+    const fr = geo.get(el.id).frame;
+    let q = { x: p.x, y: p.y };
+    if (e.shiftKey) { // 15° steps
+      const a = Math.round(Math.atan2(q.y - drag.fixed.y, q.x - drag.fixed.x) / (Math.PI / 12)) * (Math.PI / 12);
+      const l = Math.hypot(q.x - drag.fixed.x, q.y - drag.fixed.y);
+      q = { x: drag.fixed.x + Math.cos(a) * l, y: drag.fixed.y + Math.sin(a) * l };
+    }
+    const sgn = drag.mode === 'end2' ? 1 : -1;
+    const cx = (q.x + drag.fixed.x) / 2, cy = (q.y + drag.fixed.y) / 2;
+    el.x = (cx - fr.x) / fr.w; el.y = (cy - fr.y) / fr.h;
+    el.dx = sgn * (q.x - cx) / fr.w; el.dy = sgn * (q.y - cy) / fr.w;
   } else if (drag.mode === 'tail') {
     const fr = geo.get(el.id).frame;
     el.tx = (p.x - fr.x) / fr.w; el.ty = (p.y - fr.y) / fr.h;
@@ -2339,7 +2700,7 @@ function localDrawPoint(el, fr, p) {
 }
 function startDrawing(p) {
   if (!lastLayout) return;
-  if (drawState.tool === 'eraser') { drawing = { erase: true, changed: false }; eraseAt(p); return; }
+  if (drawState.tool === 'eraser') { startErasing(p); return; }
   const cell = cellAt(lastLayout, p.x, p.y);
   const fr = cell || canvasFrame(lastLayout);
   const pid = cell ? cell.p.id : null;
@@ -2370,11 +2731,11 @@ function addDrawPoint(p, force) {
   st.pts.push(+q.x.toFixed(5), +q.y.toFixed(5));
   scheduleRender();
 }
-function continueDrawing(p) { if (drawing.erase) eraseAt(p); else addDrawPoint(p); }
+function continueDrawing(p) { addDrawPoint(p); }
 function finishDrawing() {
   const d = drawing;
   drawing = null;
-  if (d.erase) { if (d.changed) commit(); return; }
+  if (d.erase) { commit(); scheduleRender(); return; }
   recenterDraw(d.el);
   commit();
   scheduleRender();
@@ -2382,7 +2743,7 @@ function finishDrawing() {
 function cancelDrawing() {
   const d = drawing;
   drawing = null;
-  if (!d || d.erase) return;
+  if (!d) return;
   d.el.strokes.pop();
   if (!d.el.strokes.length) { state.elements = state.elements.filter(e => e !== d.el); drawState.target = null; }
   scheduleRender();
@@ -2392,7 +2753,7 @@ function recenterDraw(el) {
   if (!lastLayout) return;
   const fr = frameOf(el, lastLayout);
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  el.strokes.forEach(st => { for (let i = 0; i < st.pts.length; i += 2) { x0 = Math.min(x0, st.pts[i]); x1 = Math.max(x1, st.pts[i]); y0 = Math.min(y0, st.pts[i + 1]); y1 = Math.max(y1, st.pts[i + 1]); } });
+  el.strokes.forEach(st => { if (st.kind === 'eraser') return; for (let i = 0; i < st.pts.length; i += 2) { x0 = Math.min(x0, st.pts[i]); x1 = Math.max(x1, st.pts[i]); y0 = Math.min(y0, st.pts[i + 1]); y1 = Math.max(y1, st.pts[i + 1]); } });
   if (!isFinite(x0)) return;
   const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
   el.strokes.forEach(st => { for (let i = 0; i < st.pts.length; i += 2) { st.pts[i] = +(st.pts[i] - mx).toFixed(5); st.pts[i + 1] = +(st.pts[i + 1] - my).toFixed(5); } });
@@ -2400,32 +2761,29 @@ function recenterDraw(el) {
   el.x += (mx * Math.cos(r) - my * Math.sin(r)) * k / fr.w;
   el.y += (mx * Math.sin(r) + my * Math.cos(r)) * k / fr.h;
 }
-function segDist(px, py, ax, ay, bx, by) {
-  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
-  const t = l2 ? clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1) : 0;
-  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
-}
-function strokeHit(st, x, y, r) {
-  const p = st.pts;
-  if (p.length === 2) return Math.hypot(p[0] - x, p[1] - y) <= r;
-  for (let i = 0; i < p.length - 2; i += 2) if (segDist(x, y, p[i], p[i + 1], p[i + 2], p[i + 3]) <= r) return true;
-  return false;
-}
-function eraseAt(p) {
-  const tol = 10 * dispScale();
-  for (let i = state.elements.length - 1; i >= 0; i--) {
-    const el = state.elements[i];
-    if (el.type !== 'draw') continue;
-    const fr = frameOf(el, lastLayout);
-    const q = localDrawPoint(el, fr, p);
-    const before = el.strokes.length;
-    el.strokes = el.strokes.filter(st => !strokeHit(st, q.x, q.y, st.size / 2 + tol / q.k));
-    if (el.strokes.length !== before) {
-      drawing.changed = true;
-      if (!el.strokes.length) { state.elements.splice(i, 1); geo.delete(el.id); if (drawState.target === el.id) drawState.target = null; }
-    }
+// The eraser paints "holes" into the drawing under the finger (or the last one drawn).
+function startErasing(p) {
+  // erase in the drawing that belongs to the image under the finger
+  // (the one drawn last if possible, else the top-most one)
+  let target = null;
+  const cell = cellAt(lastLayout, p.x, p.y);
+  const pid = cell ? cell.p.id : null;
+  const here = state.elements.filter(el => el.type === 'draw' && (el.panelId || null) === pid);
+  const cur = drawState.target && findEl(drawState.target);
+  if (cur && here.includes(cur)) target = cur;
+  else if (here.length) target = here[here.length - 1];
+  else {
+    const all = state.elements.filter(el => el.type === 'draw');
+    target = all.find(el => { const g = geo.get(el.id); if (!g) return false; const lp = localPoint(g, p); return Math.abs(lp.x) <= g.w / 2 && Math.abs(lp.y) <= g.h / 2; }) || null;
   }
-  scheduleRender();
+  if (!target) { toast('Nothing to erase here — the eraser only works on drawings.', 1800); return; }
+  drawState.target = target.id;
+  const fr = frameOf(target, lastLayout);
+  const k = fr.w * (target.s || 1);
+  const st = { pts: [], color: '#000', kind: 'eraser', size: (drawState.size * 2.5) / 1000 * fr.w / k, alpha: 1 };
+  target.strokes.push(st);
+  drawing = { el: target, st, erase: true };
+  addDrawPoint(p, true);
 }
 $('drawBtn').addEventListener('click', () => setDrawMode(!drawState.on));
 $('drawDoneBtn').addEventListener('click', () => setDrawMode(false));
@@ -2598,6 +2956,8 @@ $('exQuality').addEventListener('input', () => { settings.quality = Number($('ex
 
 function hasContent() { return state.panels.length > 0 || state.elements.length > 0; }
 async function exportFile() {
+  showOriginal = false;
+  await ensureFiltersReady();
   const cv = document.createElement('canvas');
   renderTo(cv, { ui: false, full: true });
   const fmt = settings.format;
@@ -3095,6 +3455,7 @@ function scheduleSave() {
   saveTimer = setTimeout(saveNow, 1200);
 }
 async function makeThumb() {
+  await ensureFiltersReady();
   const cv = document.createElement('canvas');
   const lay = computeLayout(cv.getContext('2d'));
   renderTo(cv, { ui: false, full: true, scale: Math.min(1, 320 / Math.max(lay.W, lay.H)) });

@@ -1,5 +1,11 @@
 # Changelog
 
+### 0.5.0 — 2026-11-23 — Real eraser, shapes, filters
+- **Real eraser:** rubs out parts of a drawing pixel by pixel (each drawing is painted on its own layer, so the image below is never touched); every eraser stroke can be undone
+- **+ Shape:** rectangle (with rounded corners), ellipse, line and arrow — fill on/off with color and opacity, line color and width, dashed lines, arrow heads at the end / start / both ends, rotation and opacity; lines and arrows have two draggable end handles (Shift = 15° steps)
+- **Filters** for every image and picture: brightness, contrast, saturation, black & white, sepia, blur and a “Deep fried 🔥” look (over-saturated, grainy, JPEG-crunched); presets None, B & W, Noir, Sepia, Vivid, Faded, Dreamy, Deep fried; “Hold: before” to compare; filtered versions are cached, exports always wait for them
+- Browsers without canvas filters (older Safari) get a built-in pixel fallback
+
 ### 0.4.0 — 2026-11-23 — Stickers, drawing, zoom, rotation, comic rows
 - **+ Sticker:** ~400 emoji (scale like stickers, optional outline), 8 built-in vector stickers (red arrow, red circle, pixel sunglasses, laser eye, censor bar, heart, crown, star burst) and your own pictures (PNG, JPG, WebP, SVG, GIF first frame, …) on top of the images
 - **Opacity** for every element (text, bubble, emoji, picture, drawing); rotation for texts, pictures and drawings (−180° … 180°)

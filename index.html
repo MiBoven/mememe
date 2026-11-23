@@ -71,6 +71,15 @@
     <button type="button" class="tool wide" id="addTextBtn" title="Add a text box to the selected image (or the whole canvas)">+ Text</button>
     <button type="button" class="tool wide" id="addBubbleBtn" title="Add a speech bubble to the selected image (or the whole canvas)">+ Bubble</button>
     <button type="button" class="tool wide" id="addStickerBtn" title="Add an emoji, a sticker or your own picture (PNG, JPG, SVG, GIF, …)">+ Sticker</button>
+    <div class="menu-wrap" id="shapeWrap">
+      <button type="button" class="tool wide" id="addShapeBtn" title="Add a rectangle, ellipse, line or arrow" aria-haspopup="true">+ Shape</button>
+      <div class="menu" id="shapeMenu" style="display:none;">
+        <button type="button" data-shape="rect">▭ Rectangle</button>
+        <button type="button" data-shape="ellipse">◯ Ellipse</button>
+        <button type="button" data-shape="line">╱ Line</button>
+        <button type="button" data-shape="arrow">➜ Arrow</button>
+      </div>
+    </div>
     <button type="button" class="tool wide" id="topBottomBtn" title="Add the classic meme text pair at the top and bottom">Top/Bottom</button>
     <span class="tool-sep"></span>
     <button type="button" class="tool" id="drawBtn" title="Draw freehand (pen, marker, eraser). Two fingers / Ctrl+wheel to zoom.">✏️</button>
@@ -111,7 +120,7 @@
       <div class="seg-mini" id="drawTool">
         <button type="button" data-v="pen" title="Pen">🖊 Pen</button>
         <button type="button" data-v="marker" title="Marker — translucent, flat ends">🖍 Marker</button>
-        <button type="button" data-v="eraser" title="Eraser — removes whole strokes you touch">🧽 Eraser</button>
+        <button type="button" data-v="eraser" title="Eraser — rubs out parts of the drawing (never the image below)">🧽 Eraser</button>
       </div>
     </div>
     <div class="row">
@@ -129,7 +138,7 @@
       <input type="range" id="drawAlpha" min="5" max="100" title="Stroke opacity">
       <span class="val" id="drawAlphaVal"></span>
     </div>
-    <p class="muted small-txt">Draw with one finger / the mouse. Zoom: two fingers, Ctrl+wheel or the + / − buttons. Move around: two fingers, wheel, or Space + drag. Each image gets its own drawing; undo removes the last stroke.</p>
+    <p class="muted small-txt">Draw with one finger / the mouse. Zoom: two fingers, Ctrl+wheel or the + / − buttons. Move around: two fingers, wheel, or Space + drag. Each image gets its own drawing; the eraser only affects drawings. Undo removes the last stroke.</p>
   </div>
 
   <!-- Element (text / bubble / picture / drawing) properties -->
@@ -176,6 +185,43 @@
         <input type="checkbox" id="bTail" title="Show the pointer of the bubble">
         <span class="muted small-txt">Drag the orange handle to point it.</span>
       </div>
+    </div>
+
+    <div id="shapeOnly" hidden>
+      <div class="row">
+        <label class="lbl">Shape</label>
+        <select id="shKind" title="Kind of shape">
+          <option value="rect">Rectangle</option>
+          <option value="ellipse">Ellipse</option>
+          <option value="line">Line</option>
+          <option value="arrow">Arrow</option>
+        </select>
+      </div>
+      <div class="row" id="shFillRow">
+        <label class="lbl">Fill</label>
+        <input type="checkbox" id="shFillOn" title="Fill the shape">
+        <input type="color" id="shFill" title="Fill color">
+        <input type="range" id="shFillOpacity" min="0" max="100" title="Fill opacity">
+        <span class="val" id="shFillOpacityVal"></span>
+      </div>
+      <div class="row">
+        <label class="lbl">Line</label>
+        <input type="color" id="shStroke" title="Line color">
+        <input type="range" id="shStrokeW" min="0" max="60" title="Line width (0 = no line)">
+        <span class="val" id="shStrokeWVal"></span>
+      </div>
+      <div class="row">
+        <label class="lbl">Style</label>
+        <label class="inline-chk" title="Dashed line"><input type="checkbox" id="shDash"> dashed</label>
+        <span id="shRadiusWrap" class="inline-chk" title="Rounded corners">corners <input type="range" id="shRadius" min="0" max="100"></span>
+        <select id="shHeads" title="Arrow heads">
+          <option value="none">No heads</option>
+          <option value="end">Head at end</option>
+          <option value="start">Head at start</option>
+          <option value="both">Both ends</option>
+        </select>
+      </div>
+      <p class="muted small-txt" id="shLineHint">Drag the round handles to move the ends. Hold Shift for 15° steps.</p>
     </div>
 
     <div id="textRows">
@@ -363,6 +409,51 @@
     </details>
   </div>
 </div>
+
+<!-- ---------- Filters (image panels & pictures) ---------- -->
+<details class="card" id="filterCard" hidden>
+  <summary class="label-main" title="Color filters for the selected image or picture">Filters</summary>
+  <div class="chips" id="filterPresets"></div>
+  <div class="row">
+    <label class="lbl">Brightness</label>
+    <input type="range" id="fBright" min="20" max="200" title="Brightness">
+    <span class="val" id="fBrightVal"></span>
+  </div>
+  <div class="row">
+    <label class="lbl">Contrast</label>
+    <input type="range" id="fContrast" min="20" max="250" title="Contrast">
+    <span class="val" id="fContrastVal"></span>
+  </div>
+  <div class="row">
+    <label class="lbl">Saturation</label>
+    <input type="range" id="fSat" min="0" max="300" title="Color saturation (0 = gray)">
+    <span class="val" id="fSatVal"></span>
+  </div>
+  <div class="row">
+    <label class="lbl">Black &amp; white</label>
+    <input type="range" id="fGray" min="0" max="100" title="Black & white amount">
+    <span class="val" id="fGrayVal"></span>
+  </div>
+  <div class="row">
+    <label class="lbl">Sepia</label>
+    <input type="range" id="fSepia" min="0" max="100" title="Sepia (old photo) amount">
+    <span class="val" id="fSepiaVal"></span>
+  </div>
+  <div class="row">
+    <label class="lbl">Blur</label>
+    <input type="range" id="fBlur" min="0" max="40" title="Blur (relative to the image size)">
+    <span class="val" id="fBlurVal"></span>
+  </div>
+  <div class="row">
+    <label class="lbl">Deep fried</label>
+    <input type="checkbox" id="fFried" title="The classic over-saturated, crunchy meme look">
+    <span class="muted small-txt">🔥 over-saturated &amp; crunchy</span>
+  </div>
+  <div class="btn-row">
+    <button type="button" class="btn secondary" id="fCompare" title="Hold to see the original">👁 Hold: before</button>
+    <button type="button" class="btn secondary" id="fReset" title="Remove all filters from this image">Reset filters</button>
+  </div>
+</details>
 
 <!-- ---------- Layout ---------- -->
 <details class="card" id="layoutCard">

@@ -51,9 +51,19 @@ A privacy-friendly web app for making memes, image grids, mosaics, comic pages a
 - Pictures can be resized (keeps the ratio), rotated, mirrored, replaced and faded (opacity), and belong to the image they sit on like texts
 
 ### Freehand drawing
-- ✏️ switches to drawing: **pen**, translucent **marker** and a stroke **eraser**, 8 quick colors + color picker, size and opacity
+- ✏️ switches to drawing: **pen**, translucent **marker** and a real pixel **eraser** (only affects drawings, never the image below), 8 quick colors + color picker, size and opacity
 - Every image gets its own drawing; afterwards it behaves like any element (move, resize, rotate, opacity, layer order) and can be continued with “Draw more” or a double-tap
 - Undo removes the last stroke
+
+### Shapes
+- **+ Shape:** rectangle (rounded corners optional), ellipse, line, arrow
+- Fill on/off with color and opacity, line color and width, dashed lines, arrow heads (end / start / both), rotation and opacity
+- Lines and arrows: drag the two round end handles (Shift = 15° steps); rectangles and ellipses: corner handle
+
+### Filters
+- For every image and every picture (the *Filters* card appears when one is selected): brightness, contrast, saturation, black & white, sepia, blur and **Deep fried 🔥**
+- Presets: None, B & W, Noir, Sepia, Vivid, Faded, Dreamy, Deep fried; **Hold: before** shows the original while pressed
+- Filtered versions are computed once and cached; exports wait until all filters are ready
 
 ### Zoom & view
 - Pinch with two fingers, Ctrl + wheel (or trackpad pinch) or the **+ / − / 1×** buttons on the canvas; move the zoomed view with two fingers, the mouse wheel, **Space + drag** or the middle mouse button
@@ -108,7 +118,7 @@ The on-screen canvas shows a "view" of the composition: the whole result or, in 
 
 Speech bubbles are drawn on two small scratch canvases: one for the fill (applied with the fill opacity as a whole, so overlapping parts like body + tail never get darker) and one for the border (stroked at double width, interior punched out) — one seamless outline around body + tail.
 
-Freehand strokes are stored as point lists relative to the drawing's center (in units of the image width), so they scale and rotate with the drawing and are smoothed with quadratic curves when drawn. Image rotation combines 90° steps with a fine angle; the fill / fit scale is computed for the rotated bounding box.
+Every drawing is rendered on its own layer, so eraser strokes (`destination-out`) only cut holes into that drawing. Filters are applied with the canvas `filter` property (pixel fallback for older Safari) to a cached copy of the image; “Deep fried” adds grain and two rounds of low-quality JPEG re-encoding. Freehand strokes are stored as point lists relative to the drawing's center (in units of the image width), so they scale and rotate with the drawing and are smoothed with quadratic curves when drawn. Image rotation combines 90° steps with a fine angle; the fill / fit scale is computed for the rotated bounding box.
 
 Decoded images are kept outside the serializable state, so undo/redo only snapshots a small JSON description of the composition.
 
