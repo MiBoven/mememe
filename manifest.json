@@ -1,0 +1,14 @@
+{
+  "name": "mememe",
+  "short_name": "mememe",
+  "description": "To Me, or not to Me, that's the Meme! — make memes, grids and comics in your browser.",
+  "start_url": "/",
+  "scope": "/",
+  "icons": [
+    { "src": "/android-chrome-192x192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/android-chrome-512x512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "theme_color": "#131313",
+  "background_color": "#131313",
+  "display": "standalone"
+}
